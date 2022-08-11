@@ -1,10 +1,9 @@
 from cmath import sqrt
 import math as m
 import numpy as np
-
-###### TABLE ######
-# PLANE ### SERVO #
-# 5.3   ### -14   #
+import pigpio
+from time import sleep
+import atexit
 
 ### GEOMETRY OF ARM ###
 SERVO_ARM_LENGTH = 45
@@ -16,23 +15,11 @@ MIN_PLANE_ANGEL_DEG = -26.23  # Calcualted from model. -24.2 according to F360, 
 MAX_SERVO_ANGEL_DEG = 47  # Servo angel (arm pointing downwards) from parallel with ground
 MAX_PLANE_ANGEL_DEG = 24.63  # Calcualted from model. 25.2 deg according to F360, but ...
 
-
-### GEOMETRY OF PLATE ###
+### GEOMETRY OF disk ###
 RADIUS = 125
 
-        ################################################
-        # Servo rotation is J1
-        # degress of rotation at servo means that the arm is vertical
-        # negative servo degrees indicates that the servo arm points upwards
-        # negative plane angels indicates that the plane tilts away from the plane
-        # good correlation when plane angel is +- 20
-
-        # Connection between servo arm and ball arm is J2
-        # Connection between ball arm and plate is J3
-
-        # Balljoint at (0, 0)
-        # All lengths in mm (10e-3 m)
-        #################################################
+# Servo handler
+pwm = pigpio.pi()
 
 class ArmMechanics:
     """ Class responsible for calculating the angle of a line. An arm
@@ -40,10 +27,13 @@ class ArmMechanics:
     is two-dimensional. The angle of a line is measured against a horisonatal line.
     The same goes for the servo angel """
 
-    def __init__(self, axis, L1, J1_ROT_P, L2, R, min_servo_angel_deg, min_line_angel_deg, max_servo_angel_deg, max_line_angel_deg):
+    def __init__(self, axis, L1, J1_ROT_P, L2, R, min_servo_angel_deg, min_line_angel_deg, max_servo_angel_deg, max_line_angel_deg, servo):
         
         # Axis
         self.axis = axis
+
+        # Servo object
+        self.servo = servo
 
         # Angel of the servo motor
         self.current_servo_angel_rad = 0
@@ -168,21 +158,18 @@ class ArmMechanics:
         its position variable """
 
         # Do motor shit
-        self.move_servo(1)
+        self.servo.moveToDeg(self.to_deg(angel_rad), wait=True)
         #
         print("Angle for " + self.axis + "-servo is ", self.to_deg(angel_rad))
         self.current_servo_angel_rad = angel_rad
     
-    def move_servo(self, angel):
-        """ Moves the servo to a set position """
-        pass
 
 class Plane:
     def __init__(self, radius, x_arm, y_arm):
         self.center_pnt = [0,0,0]
-        # Point of contact between the plate and the x-axis arm
+        # Point of contact between the disk and the x-axis arm
         self.x_point = [None, None, None]
-        # Point of contact between the plate and the y-axis arm
+        # Point of contact between the disk and the y-axis arm
         self.y_point = [None, None, None]
         self.normal_vector = [None, None, None]
         self.radius = radius
@@ -227,6 +214,23 @@ class Plane:
         self.y_arm.set_servo_angel(y_servo_rad)
 
         self.update()
+    
+    def test(self):
+        """ Runs a series of commands to ensure that 
+        the plane is working as intended"""
+        print("Slow test")
+
+        print("Moving to horizontal position")
+        plane.set_plane_angels(0, 0)
+        sleep(1)
+        print("Giving disk -20 deg rotation in x, (plane pointing away from x-servo")
+        plane.set_plane_angels(-20*m.pi/180, 0)
+        sleep(1)
+        print("Giving disk -20 deg rotation in y, (plane pointing away from x-servo")
+        plane.set_plane_angels(0,-20*m.pi/180)
+        sleep(1)
+        print("Moving to horizontal position")
+        plane.set_plane_angels(0, 0)
 
 class Ball:
     def __init__(self):
@@ -245,57 +249,68 @@ class Ball:
         normal vector of the plane the ball is on"""
         pass
 
-# Define the mechanics controlling the motion of the plate in the XZ-plane
+class MyServo():
+    def __init__(self, pin, min_deg, max_deg, min_pulse, max_pulse):
+        self.pin = pin
+        self.min_pulse = min_pulse
+        self.min_deg = min_deg
+        self.max_pulse = max_pulse
+        self.max_deg = max_deg 
+        self.last_pulse = 0
+        # Angle that makes the arm horizontal
+        self.zero_deg = 0
+
+        # Move to horizontal position of the plane
+        print("Move to horizontal position of the plane")
+        self.moveToDeg(0)
+        sleep(1)
+
+    def moveToDeg(self, deg, wait = False):
+        # Convert deg to pulse
+        pulse = self.map(deg, self.max_deg, self.min_deg, self.min_pulse, self.max_pulse)
+        # Change the zero position from horizontal of plane to
+        # horizontal of servo arm
+        #pulse_correction = self.map(self.zero_deg, self.max_deg, self.min_deg, self.min_pulse, self.max_pulse)
+        pulse_corrected = self.map(deg, self.max_deg, self.min_deg, self.min_pulse, self.max_pulse)
+
+        # Calculate sleep time
+        sleep_time = abs(self.last_pulse-pulse_corrected)*0.8/1230 #0.8
+        pwm.set_servo_pulsewidth(self.pin, pulse_corrected)
+        self.last_pulse = pulse_corrected
+        print("Moving servo to", deg , "measured from when the servo arm is horizontal")
+        if wait:
+            sleep(sleep_time)
+        
+    def map(self, x, in_min, in_max, out_min, out_max):
+        return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
+    def detach(self):
+        pwm.set_servo_pulsewidth(self.pin, 0)
+    
+
+### INITIALIZE SERVO MOTORS ###
+# All angles are measured with zero as
+# when the servo arm is horizontal
+
+x_servo = MyServo(21, -87-4, 52-4, 860, 2080)
+atexit.register(x_servo.detach)
+y_servo = MyServo(20, -87-4, 56-4, 2080, 850)
+atexit.register(y_servo.detach)
+
+# Define the mechanics controlling the motion of the disk in the XZ-plane
 x_arm = ArmMechanics("x", SERVO_ARM_LENGTH, SERVO_ARM_ENDPOINT, BALL_ARM_LENGTH, BALL_ARM_OFFSET_CENTER,
-MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG)
+MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG, servo=x_servo)
 # Set the current value of the servo to match a flat plane
-x_arm.current_servo_angel_rad =  x_arm.calc_servo_angel(0)
+x_arm.zero = x_arm.calc_servo_angel(0)
 
-# Define the mechanics controlling the motion of the plate in the YZ-plane
+# Define the mechanics controlling the motion of the disk in the YZ-plane
 y_arm = ArmMechanics("y", SERVO_ARM_LENGTH, SERVO_ARM_ENDPOINT, BALL_ARM_LENGTH, BALL_ARM_OFFSET_CENTER,
-MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG)
+MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG, servo=y_servo)
 # Set the current value of the servo to match a flat plane
-y_arm.current_servo_angel_rad =  y_arm.calc_servo_angel(0)
-
+y_arm.zero =  y_arm.calc_servo_angel(0)
 
 # Define the plane
 plane = Plane(RADIUS, x_arm, y_arm)
 plane.update()
+plane.test()
 
-x_servo = x_arm.calc_servo_angel(-10*m.pi/180)
-y_servo = y_arm.calc_servo_angel(20*m.pi/180)
-
-x_arm.set_servo_angel(x_servo)
-y_arm.set_servo_angel(y_servo)
-plane.update()
-print("")
-print("")
-plane.set_plane_angels(20*m.pi/180, -10*m.pi/180)
-
-
-
-"""
-Trial and error for binary search
-v = arm.calc_line_angel(-25*m.pi/180)
-# We want to find the angle of the angle of the plane to be -13.3 (same as -30 deg on servo)
-
-# We begin with middle angel of servo. This gives -1.3 as plane angel
-m_val = (arm.min_servo_angel_deg + arm.max_servo_angel_deg)*0.5
-u = arm.calc_line_angel(m_val*m.pi/180)
-# The angle of the plane is too large (too small in absolute terms). -1.34
-
-# We try the same again, but now with a value between the middle angle and the min servo value
-m2_val = (arm.min_servo_angel_deg + m_val)*0.5
-w = arm.calc_line_angel(m2_val*m.pi/180)
-# We get -14.81. It is too small
-
-# We try the same again, but now with a value between the m2_angle and the max servo value
-m3_val = (arm.max_servo_angel_deg + m2_val)*0.5
-w = arm.calc_line_angel(m3_val*m.pi/180)
-# We get 5.71 It is too large
-
-# We begin with middle angel of servo. This gives -1.3 as plane angel
-m4_val = (arm.min_servo_angel_deg + m3_val)*0.5
-u = arm.calc_line_angel(m4_val*m.pi/180)
-# The angle of the plane is too large (too small in absolute terms). -1.34
-"""
