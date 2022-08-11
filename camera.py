@@ -5,7 +5,9 @@ import board
 import neopixel
 import random as rng
 import atexit
-
+import math
+import logging
+import numpy as np
 rng.seed(12345)
 
 
@@ -36,7 +38,7 @@ class Camera():
         self.frame_height = frame.shape[0]  
         self.frame_width = frame.shape[1]
 
-        # 
+        # Create slider to threshold image correctly
         self.tresh_lower = 60
         cv2.namedWindow("Erode")
         cv2.createTrackbar("slider", "Erode", self.tresh_lower,255, self.slider_change)   
@@ -47,75 +49,6 @@ class Camera():
         self.leds.fill((0,0,0))
         self.leds.show()
 
-    def process(self, frame):
-        frame = imutils.rotate(frame, angle=self.camera_rotation) 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        # Blur using 3 * 3 kernel.
-        gray_blurred = cv2.blur(gray, (3, 3))
-        cv2.imshow("gray blurr", gray_blurred)
-
-        # Apply Hough transform on the blurred image.
-        detected_circles = cv2.HoughCircles(gray_blurred,
-                        cv2.HOUGH_GRADIENT, 1, 20, param1 = 50,
-                    param2 = 30, minRadius = 1, maxRadius = 40)
-
-        # Draw circles that are detected.
-        if detected_circles is not None:
-
-            # Convert the circle parameters a, b and r to integers.
-            detected_circles = np.uint16(np.around(detected_circles))
-
-            for pt in detected_circles[0, :]:
-                a, b, r = pt[0], pt[1], pt[2]
-
-                # Draw the circumference of the circle.
-                cv2.circle(frame, (a, b), r, (0, 255, 0), 2)
-
-                # Draw a small circle (of radius 1) to show the center.
-                cv2.circle(frame, (a, b), 1, (0, 0, 255), 3)
-                cv2.imshow("Detected Circle", frame)
-
-    def blob_detector(self, frame):
-        # Setup SimpleBlobDetector parameters.
-        params = cv2.SimpleBlobDetector_Params()
-
-        # Change thresholds
-        params.minThreshold = 10
-        params.maxThreshold = 200
-
-        # Filter by Area.
-        params.filterByArea = False
-        # params.minArea = 1500
-
-        # Filter by Circularity
-        params.filterByCircularity = True
-        params.minCircularity = 0.1
-
-        # Filter by Convexity
-        params.filterByConvexity = True
-        params.minConvexity = 0.4
-
-        # Filter by Inertia
-        params.filterByInertia = True
-        params.minInertiaRatio = 0.01
-
-        # Create a detector with the parameters
-        ver = (cv2.__version__).split('.')
-        if int(ver[0]) < 3 :
-            detector = cv2.SimpleBlobDetector(params)
-        else : 
-            detector = cv2.SimpleBlobDetector_create(params)
-
-        # Detect blobs.
-        keypoints = detector.detect(frame)
-
-        # Draw detected blobs as red circles.
-        # cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS ensures the size of the circle corresponds to the size of blob
-        im_with_keypoints = cv2.drawKeypoints(frame, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-
-        # Show keypoints
-        cv2.imshow("Keypoints", im_with_keypoints)
 
     def slider_change(self, value):
         self.tresh_lower = value
@@ -135,20 +68,71 @@ class Camera():
 
         self.detected_shapes_coords = []
         contours, _ = cv2.findContours(erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours[2:]:
+        contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
+
+        i = 0
+        circles = []
+        for contour in contours:
             approx = cv2.approxPolyDP(contour, 0.01 * cv2.arcLength(contour, True), True)
-            # Draw the contours onto the picture
-            cv2.drawContours(frame, [contour], 0, (0, 0, 255), 5)
-            # Fin the center point of shape
-            M = cv2.moments(contour)
-            if M['m00'] != 0.0:
-                x = int(M['m10']/M['m00'])
-                y = int(M['m01']/M['m00'])
-                frame = cv2.circle(frame, (x, y), radius=3,color=(0,255,0), thickness=3)
+            # Find center and raduius of circles
             center, radius = cv2.minEnclosingCircle(approx)
+            picture_area = self.frame_width*self.frame_height
+            circle_area = math.pi*radius*radius
+            # Check if it is a circle
+            if not cv2.isContourConvex(approx):
+                # Not a circle
+                # cv2.drawContours(frame, [contour], 0, (0, 255, 255), 3)
+                continue
+
+            # If the circle is too small, do not 
+            # do the rest of the loop for this item
+            # and mark it with red
+            if circle_area/picture_area < 0.001:
+                # Draw the contours onto the picture
+                # cv2.drawContours(frame, [contour], 0, (0, 0, 255), 3)
+                logging.debug("Too small")
+                continue
+            else: 
+                # Draw the contours onto the picture
+                # cv2.drawContours(frame, [contour], 0, (0, 255, 0), 3)
+                logging.debug("Big enough")
+            
+            # Draw center
+            cv2.circle(frame, (int(center[0]), int(center[1])), radius=3, color=(0,255,0), thickness=3)
+            # Draw arc
             cv2.circle(frame, (int(center[0]), int(center[1])), int(radius), (255, 0, 0), 2)
 
+            if i > 0 and circles:
 
+                a = center[0] > circles[0][0] - circles[0][2] or center[0] < circles[0][0] + circles[0][2]
+                b = center[1] > circles[0][1] - circles[0][2] or center[1] < circles[0][1] + circles[0][2]
+                if a and b:
+                    # This is the ball
+                    ball_center =  (int(center[0]), int(center[1]))
+                    plate_center = (int(circles[0][0]), int(circles[0][1]))
+                    cv2.circle(frame, ball_center, int(radius), (0, 0, 255), 10)
+                    cv2.line(frame,ball_center, plate_center, (255, 255, 0), 3 )
+                    
+                    error = math.sqrt((center[0]-circles[0][0])**2 + (center[1]-circles[0][1])**2)
+                    #print(error)
+                    # Find mirror vector
+                    def dot_vector(a, b):
+                        return a[0]*b[0] + a[1]*b[1]
+                    # normal_vec = np.array((0,plate_center[1]))
+                    
+                    line_vec = np.array(ball_center) - np.array(plate_center)
+                    normal_vec = np.array((-1, line_vec[0]/line_vec[1]))
+
+                    scalar = 2*dot_vector(normal_vec, line_vec)/dot_vector(normal_vec,normal_vec)
+                    mirror_vec = scalar*normal_vec-line_vec
+                    picture_vec = np.array(plate_center) + mirror_vec
+                    picture_line = picture_vec.tolist()
+                    picture_line[0], picture_line[1] = int(picture_line[0]), int(picture_line[1])
+                    cv2.line(frame,plate_center, picture_line,  (0, 255, 255), 3 )
+
+
+            circles.append([int(center[0]), int(center[1]), radius])
+            i +=1
         cv2.imshow("final", frame)
 
     def website_cnt(self, frame):

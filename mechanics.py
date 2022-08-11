@@ -231,6 +231,8 @@ class Plane:
         sleep(1)
         print("Moving to horizontal position")
         plane.set_plane_angels(0, 0)
+    #### NEW FUNCTION ####
+    # Camera has 2d vector for direction of slope. The amount of slope should be the error*k, and this would be the z-component of the vector. This function should position the plane along that vector
 
 class Ball:
     def __init__(self):
@@ -312,5 +314,6 @@ y_arm.zero =  y_arm.calc_servo_angel(0)
 # Define the plane
 plane = Plane(RADIUS, x_arm, y_arm)
 plane.update()
-plane.test()
+if __name__=='__main__':
+    plane.test()
 
