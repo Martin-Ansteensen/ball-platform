@@ -232,7 +232,7 @@ class Plane:
         print("Moving to horizontal position")
         plane.set_plane_angels(0, 0)
     #### NEW FUNCTION ####
-    # Camera has 2d vector for direction of slope. The amount of slope should be the error*k, and this would be the z-component of the vector. This function should position the plane along that vector
+    # Camera has 2d vector for direction of slope. The amount of slope should be the error*k, and this would be the z-component of the vector. This function should position the plane along that vector. To do this, calculate the vector (2d) in the middel of the line from the line vector. add the z-error to this (instead of subtraction). Find normal vector that has positive z-component
 
 class Ball:
     def __init__(self):

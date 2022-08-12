@@ -16,7 +16,7 @@ class Camera():
     def __init__(self):
         self.frame_height = None
         self.frame_width = None
-        self.framrate = None
+        self.framrate = 60
         self.camera_rotation = None
         # Turn on LED-ring for an even lighting
         self.leds = neopixel.NeoPixel(board.D10, 24, brightness=1, auto_write=False)
@@ -39,7 +39,7 @@ class Camera():
         self.frame_width = frame.shape[1]
 
         # Create slider to threshold image correctly
-        self.tresh_lower = 60
+        self.tresh_lower = 83
         cv2.namedWindow("Erode")
         cv2.createTrackbar("slider", "Erode", self.tresh_lower,255, self.slider_change)   
 
@@ -61,8 +61,8 @@ class Camera():
         _, threshold = cv2.threshold(gray, self.tresh_lower, 255, cv2.THRESH_BINARY)
         # Remove noise from the image
         kernel = np.ones((5,5), np.uint8)
-        dilate = cv2.dilate(threshold, kernel, iterations=1)
-        erode = cv2.erode(dilate, kernel, iterations=1)		
+        dilate = cv2.dilate(threshold, kernel, iterations=2)
+        erode = cv2.erode(dilate, kernel, iterations=3)		
         # Display the processed image to the user
         cv2.imshow("Erode", erode)
 
@@ -114,6 +114,8 @@ class Camera():
                     cv2.line(frame,ball_center, plate_center, (255, 255, 0), 3 )
                     
                     error = math.sqrt((center[0]-circles[0][0])**2 + (center[1]-circles[0][1])**2)
+                    if error == 0:
+                        continue
                     #print(error)
                     # Find mirror vector
                     def dot_vector(a, b):
@@ -121,6 +123,8 @@ class Camera():
                     # normal_vec = np.array((0,plate_center[1]))
                     
                     line_vec = np.array(ball_center) - np.array(plate_center)
+                    if line_vec[1] == 0:
+                        line_vec[1] = 1
                     normal_vec = np.array((-1, line_vec[0]/line_vec[1]))
 
                     scalar = 2*dot_vector(normal_vec, line_vec)/dot_vector(normal_vec,normal_vec)
@@ -129,6 +133,10 @@ class Camera():
                     picture_line = picture_vec.tolist()
                     picture_line[0], picture_line[1] = int(picture_line[0]), int(picture_line[1])
                     cv2.line(frame,plate_center, picture_line,  (0, 255, 255), 3 )
+                    z_adjust = error*0.1
+                    plane_vec = [picture_line[0], picture_line[1], -z_adjust]
+                    nort_plane_vec = [normal_vec[0], normal_vec[1], z_adjust]
+
 
 
             circles.append([int(center[0]), int(center[1]), radius])
@@ -175,20 +183,18 @@ class Camera():
         # Get the next frame
         ret, frame = self.videostream.read()
         # Process the frame
-        #self.blob_detector(frame) 
         self.cnt_process(frame)
-        #self.website_cnt(frame)
 		# Get the status of the keyboard keys
         key = cv2.waitKey(1) & 0xFF 
-		# Exit the program if the user presses 'x'
-        if key == ord("q"): 
-			# Cleanup before exit.
-            cv2.destroyAllWindows()
-            exit()
+		# # Exit the program if the user presses 'x'
+        # if key == ord("q"): 
+		# 	# Cleanup before exit.
+        #     cv2.destroyAllWindows()
+        #     exit()
 		
-		# Save the image if the user presses 's'
-        if key == ord("s"):
-            self.saveImage()
+		# # Save the image if the user presses 's'
+        # if key == ord("s"):
+        #     self.saveImage()
 
 if __name__=='__main__':
     cam = Camera()
