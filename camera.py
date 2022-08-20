@@ -3,57 +3,72 @@ import numpy as np
 import imutils
 import board
 import neopixel
-import random as rng
 import atexit
 import math
 import logging
 import numpy as np
-rng.seed(12345)
+from picamera.array import PiRGBArray
+from picamera import PiCamera
+import time
 
+
+
+SHOW_CV2_WINDOW = True
+PI_CAMERA = True
 
 class Camera():
     """ Class for handling camera """
     def __init__(self):
-        self.frame_height = None
-        self.frame_width = None
+        # print(cv2.useOptimized())
+        self.frame_height = 480
+        self.frame_width = 640
         self.framrate = 30
-        self.camera_rotation = 90
+        self.camera_rotation = cv2.ROTATE_90_COUNTERCLOCKWISE
         # Turn on LED-ring for an even lighting
         self.leds = neopixel.NeoPixel(board.D10, 24, brightness=1, auto_write=False)
         self.leds.fill((255,255,255))
         self.leds.show()
         # Turn off LEDs when program stops
         atexit.register(self.turn_off_leds)
+        if PI_CAMERA:
+            self.videostream = PiCamera()
+            self.videostream.resolution = (self.frame_width, self.frame_height)
+            self.videostream.framerate = 32
+            self.rawCapture = PiRGBArray(self.videostream, size=(self.frame_width, self.frame_height))
+            # allow the camera to warmup    
+            time.sleep(0.1)
+        else:
+            # Begin video stream
+            self.videostream = cv2.VideoCapture(0)
+            self.videostream.set(3, self.frame_width)
+            self.videostream.set(4, self.frame_height)
+            self.videostream.set(cv2.CAP_PROP_FPS, self.framrate)
+            
+            self.static = None
 
-        # Begin video stream
-        self.videostream = cv2.VideoCapture(0)
-        self.videostream.set(3, self.frame_width)
-        self.videostream.set(4, self.frame_height)
-        #self.videostream.set(cv2.CAP_PROP_FPS, self.framrate)
-        
-        self.static = None
+            # Get the first frame
+            ret, frame = self.videostream.read()
+            print("The resolution of the images: ", frame.shape[0], frame.shape[1]) # Print the resolution of the image
+            
+            # Frame for simulation
+            self.static = cv2.rotate(frame, self.camera_rotation)
 
-        # Get the first frame
-        ret, frame = self.videostream.read()
-        print("The resolution of the images: ", frame.shape[0], frame.shape[1]) # Print the resolution of the image
-		
-        self.static = imutils.rotate(frame, self.camera_rotation)
-
-        # Adjust the resolution in case the camera does not support
-		# the resolution set in config
-        self.frame_height = frame.shape[0]  
-        self.frame_width = frame.shape[1]
+            # Adjust the resolution in case the camera does not support
+            # the resolution set in config
+            self.frame_height = frame.shape[0]  
+            self.frame_width = frame.shape[1]
 
         # Default value for slider
         self.tresh_lower = 83
-        # Create slider to threshold image correctly
-        cv2.namedWindow("Preprocessed image")
-        cv2.createTrackbar("slider", "Preprocessed image", self.tresh_lower,255, self.slider_change)  
+        
+        if SHOW_CV2_WINDOW:
+            # Create slider to threshold image correctly
+            cv2.namedWindow("Preprocessed image")
+            cv2.createTrackbar("slider", "Preprocessed image", self.tresh_lower,255, self.slider_change)  
 
         # Dict for storing position-data of plate and ball
         self.objects = {"plate":{"x":None, "y":None, "r":None}, "ball":{"x":None, "y":None, "r":None}}
  
-
 
     def turn_off_leds(self):
         """ Turns of LEDs """
@@ -67,20 +82,22 @@ class Camera():
 
     def find_positions(self,frame):
         """ Locates ball and plate in image. Highlights them."""
-        # Remove this to improve speed
-        frame = imutils.rotate(frame, self.camera_rotation)
-        
+        # Rotate image
+        frame = cv2.rotate(frame, self.camera_rotation)
+
         # Convert image into grayscale image
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         # Threshold imgae
         _, threshold = cv2.threshold(gray, self.tresh_lower, 255, cv2.THRESH_BINARY)
+# Improves speed a lot when removed
         # Remove noise from the image
         kernel = np.ones((5,5), np.uint8)
-        dilate = cv2.dilate(threshold, kernel, iterations=2)
-        erode = cv2.erode(dilate, kernel, iterations=3)		
-        # Display the processed image to the user
-        cv2.imshow("Preprocessed image", erode)
+        erode = cv2.erode(threshold, kernel, iterations=1)
         
+        if SHOW_CV2_WINDOW:	
+            # Display the processed image to the user
+            cv2.imshow("Preprocessed image", erode)
+            
         self.detected_shapes_coords = []
         # Find contours in the image
         contours, _ = cv2.findContours(erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -119,11 +136,11 @@ class Camera():
                 # Mark the shape in the image 
                 # cv2.drawContours(frame, [contour], 0, (0, 255, 0), 3)
                 pass
-            
-            # Draw center of the circle onto the image
-            cv2.circle(frame, (int(center[0]), int(center[1])), radius=3, color=(0,255,0), thickness=3)
-            # Draw the perimeter of the circle onto the image
-            cv2.circle(frame, (int(center[0]), int(center[1])), int(radius), (255, 0, 0), 2)
+            if SHOW_CV2_WINDOW:
+                # Draw center of the circle onto the image
+                cv2.circle(frame, (int(center[0]), int(center[1])), radius=3, color=(0,255,0), thickness=3)
+                # Draw the perimeter of the circle onto the image
+                cv2.circle(frame, (int(center[0]), int(center[1])), int(radius), (255, 0, 0), 2)
 
             # Maybe the ball
             found_ball = False
@@ -148,18 +165,21 @@ class Camera():
             
                 # This circle is the ball
                 self.objects["ball"] = {"x": int(center[0]), "y":int(center[1])}
-                # Higlight the ball
-                cv2.circle(frame, (self.objects["ball"]["x"], self.objects["ball"]["y"]), int(radius), (0, 0, 255), 10)
-                # Draw a line from the center of the ball to the center of the plate
-                cv2.line(frame, (self.objects["ball"]["x"], self.objects["ball"]["y"]), (self.objects["plate"]["x"], self.objects["plate"]["y"]), (255, 255, 0), 3)
+                if SHOW_CV2_WINDOW:
+                    # Higlight the ball
+                    cv2.circle(frame, (self.objects["ball"]["x"], self.objects["ball"]["y"]), int(radius), (0, 0, 255), 10)
+                    # Draw a line from the center of the ball to the center of the plate
+                    cv2.line(frame, (self.objects["ball"]["x"], self.objects["ball"]["y"]), (self.objects["plate"]["x"], self.objects["plate"]["y"]), (255, 255, 0), 3)
                 found_ball = True
+                break
             
             if not found_ball:
                 # We have not found the ball
                 self.objects["ball"] = {"x": None, "y":None}
-
-        # Show image with all contours and shapes on it
-        cv2.imshow("Final", frame)
+        if SHOW_CV2_WINDOW:
+            # Show image with all contours and shapes on it
+            cv2.imshow("Final", frame)
+        print(self.objects["ball"])
 
     def get_positions(self):
         """ Returns last known position of ball and plate"""
@@ -181,6 +201,19 @@ class Camera():
         cv2.imshow("Final", draw)
         key = cv2.waitKey(1) & 0xFF 
 
+    def piCameraNextFrame(self):
+        for frame in self.videostream.capture_continuous(self.rawCapture, format="bgr", use_video_port=True):
+            # grab the raw NumPy array representing the image, then initialize the timestamp
+            # and occupied/unoccupied text
+            image = frame.array
+            # show the frame
+            self.find_positions(image)
+            key = cv2.waitKey(1) & 0xFF
+            # clear the stream in preparation for the next frame
+            self.rawCapture.truncate(0)
+            # if the `q` key was pressed, break from the loop
+            if key == ord("q"):
+                break
 
 
     def next_frame(self):
@@ -202,5 +235,8 @@ class Camera():
 
 if __name__=='__main__':
     cam = Camera()
-    while True:
-        cam.next_frame()
+    if PI_CAMERA:
+        cam.piCameraNextFrame()
+    else:
+        while True:
+            cam.next_frame()

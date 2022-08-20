@@ -275,8 +275,8 @@ class Plane:
         # Maybe add -1 to get correct correction
 
         # Implement PID-controller
-        #z_adjust = (error)*0.23
-        z_adjust = (error**2)*0.0023
+        z_adjust = (error**2)*0.0015
+        #z_adjust = (error**2)*0.0023
 
         # Find vector from center of ball to center of plate (2D)
         ball_plate_vec = np.array((pos_data["ball"]["x"], pos_data["ball"]["y"])) - np.array((pos_data["plate"]["x"], pos_data["plate"]["y"]))
