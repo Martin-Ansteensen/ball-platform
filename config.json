@@ -1,0 +1,39 @@
+{
+    "mechanics":{
+        "geometry":{
+            "servo_arm_length": 45,
+            "servo_arm_endpoint": [40.11, -51.64],
+            "ball_arm_length": 54,
+            "ball_arm_offset_center": 85.15,
+            "min_servo_angel_deg": -60,
+            "min_plane_angel_deg": -26.23,
+            "max_servo_angel_deg": 47,
+            "max_plane_angel_deg": 24.63,
+            "disk_radis": 125
+        },
+        "x_servo":{
+            "servo_pin": 21,
+            "servo_min_deg": -91,
+            "servo_max_deg": 48,
+            "servo_min_pulse": 860,
+            "servo_max_pulse": 2080
+        },
+        "y_servo":{
+            "servo_pin": 20,
+            "servo_min_deg": -91,
+            "servo_max_deg": 48,
+            "servo_min_pulse": 2080,
+            "servo_max_pulse": 850
+        }
+    },
+    "camera":{
+        "frame_width": 640,
+        "frame_height": 480,
+        "framerate": 32,
+        "camera_rotation": "cv2.ROTATE_90_COUNTERCLOCKWISE"
+
+
+
+    }
+
+}
