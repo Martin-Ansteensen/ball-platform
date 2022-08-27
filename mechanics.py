@@ -6,6 +6,8 @@ from time import sleep
 import atexit
 import logging
 
+#logging.basicConfig(level=logging.INFO)
+
 class MyOperations():
     """ Class containing useful math operations"""
     def __init__(self):
@@ -184,7 +186,7 @@ class ArmMechanics:
         its position variable """
 
         # Move servo
-        self.servo.moveToDeg(calc.to_deg(angel_rad), wait=True)
+        self.servo.moveToDeg(calc.to_deg(angel_rad), wait=False)
         logging.debug("Angle for " + self.axis + "-servo is ", calc.to_deg(angel_rad))
         # Save current position
         self.current_servo_angel_rad = angel_rad
@@ -205,6 +207,18 @@ class Plane:
 
         self.x_angel_rad = None
         self.y_angel_rad = None
+
+        self.last_error = 0
+        self.last_z_adjust = 0
+        self.last_center_error = 0
+        self.i = 0
+
+        # New PID-controller
+        self.last_x_error = 0
+        self.last_y_error = 0
+        self.ball_detected_last_run = False
+        self.ix = 0
+        self.iy = 0
 
     def update(self):
         """ Updates its x- and y points (moves servo). Updates normal vector """
@@ -241,57 +255,178 @@ class Plane:
         " Moves plane so that its normal vector is the cross product of the two given vector"
         # Calc norm vec
         norm_vec = np.cross(u, v)
-        print("PLANE VEC", norm_vec.tolist())
+        # print("PLANE VEC", norm_vec.tolist())
         # Get x and y angel of plane
         x_rad = np.arcsin(norm_vec[0]/norm_vec[2])
         y_rad = np.arcsin(norm_vec[1]/norm_vec[2])
-        print("x", x_rad*180/m.pi)
-        print("y", y_rad*180/m.pi)
+        # print("x", x_rad*180/m.pi)
+        # print("y", y_rad*180/m.pi)
 
         # Set plane according to these angles
         #print(str(x_rad*m.pi/180), str(y_rad*m.pi/180))
         self.set_plane_from_angels(x_rad, y_rad)
 
+    def two_axis_correct_ball(self, pos_data):
+        # Checxk if ball is detected
+        ball_detected = True
+        for i in pos_data:
+            for k in pos_data[i]:
+                if not pos_data[i][k]:
+                    ball_detected = False
+        # If the ball is not detected
+        # move the plane to zero incline
+        # and reset position variables
+        if not ball_detected:
+            self.set_plane_from_angels(0, 0)
+            self.last_x_error = 0
+            self.last_y_error = 0
+            self.ix = 0
+            self.ix = 0
+            self.ball_detected_last_run = False
+
+            return
+        
+                
+        # Calculate error for each axis
+        x_error = (pos_data["ball"]["x"] - pos_data["plate"]["x"])*-1
+        y_error = (pos_data["ball"]["y"] - pos_data["plate"]["y"])*-1
+        if x_error == 0:
+            x_error_sign = 0
+        else:
+            x_error_sign = x_error/abs(x_error)
+        
+        if y_error == 0:
+            y_error_sign = 0
+        else:
+            y_error_sign = y_error/abs(y_error)
+
+
+        # Kp = 0.06
+        # #Kp = 4  
+
+        # Ki = 0.006
+        
+        
+        # #Kd = 0.9
+        # Kd = 30
+        
+        # reduction_factor = 0.0001
+        # print(Kp, Ki, Kd)
+        # # x-axis
+        
+
+        # px = x_error_sign*(x_error**2)*Kp
+        # #px = x_error*Kp
+        # self.ix += x_error*Ki
+        # vx = x_error - self.last_x_error
+        # #dx = (vx/abs(vx))*(vx**2)*Kd if vx != 0 else 0
+        # dx = (x_error - self.last_x_error)*Kd
+        # x_adjust = (px + self.ix + dx)*reduction_factor
+
+        # # y-axis
+        # py = y_error_sign*(y_error**2)*Kp
+        # #py = y_error*Kp
+        # self.iy += y_error
+        # vy = y_error - self.last_y_error
+        # #dy = (vy/abs(vy))*(vy**2)*Kd if vy != 0 else 0
+        # dy = (y_error - self.last_y_error)*Kd
+        # y_adjust = (py + self.iy + dy)*reduction_factor
+
+
+        Kp = 3
+        Ki = 0.05
+        Kd = 35
+        reduction_factor = 0.0001
+        print(Kp, Ki, Kd)
+        # x-axis
+        px = x_error*Kp
+        self.ix += x_error*Ki
+        dx = (x_error - self.last_x_error)*Kd
+        x_adjust = (px + self.ix + dx)*reduction_factor
+        print(px, self.ix, dx)
+
+        # y-axis
+        py = y_error*Kp
+        self.iy += y_error*Ki
+        dy = (y_error - self.last_y_error)*Kd
+        y_adjust = (py + self.iy + dy)*reduction_factor
+
+
+
+        self.last_x_error = x_error
+        self.last_y_error = y_error
+
+        if not self.ball_detected_last_run:
+            self.ball_detected_last_run = True
+        else:
+            self.set_plane_from_angels(x_adjust, y_adjust)
+
+                
+
+
     def correct_ball(self, pos_data):
         # Check that we have valid data
         ball_detected = True
         for object in pos_data:
-            for i in pos_data[object]:
-                if not pos_data[object][i]:
+            for k in pos_data[object]:
+                if not pos_data[object][k]:
                     ball_detected = False
         
         if not ball_detected:
             self.set_plane_from_angels(0, 0)
+            self.last_center_error = 0
+            self.last_z_adjust = 0
+            self.last_pos= (None,None)
             return
 
         # Calculate the distance from the center of the ball to the center of the plate
-        error = m.sqrt((pos_data["ball"]["x"]-pos_data["plate"]["x"])**2 + (pos_data["ball"]["y"]-pos_data["plate"]["y"])**2)
-        print(error)
+        center_error = m.sqrt((pos_data["ball"]["x"]-pos_data["plate"]["x"])**2 + (pos_data["ball"]["y"]-pos_data["plate"]["y"])**2)
+        # Position travelled
+        pos = (pos_data["ball"]["x"], pos_data["ball"]["y"])
         # Do not do anything if the error is zero
-        if error == 0:
-            return
-
-        # Scale the error to give a meaningful z-correction
-        # Maybe add -1 to get correct correction
-
+        if round(center_error,1) == 0:
+            return    
         # Implement PID-controller
-        z_adjust = (error**2)*0.0015
-        #z_adjust = (error**2)*0.0023
+
+        Kp = 2
+        Ki = 0
+        Kd = 0.22
+
+        p = (center_error**3)*Kp*0.000001
+        d = -((center_error-self.last_center_error)**2)*Kd*0.01
+        self.i += center_error*Ki
+
+            #print(x,y)
+        z_adjust = p+self.i+d
+        
+        self.last_center_error = center_error
+        self.last_pos = pos
+        # limit = 3
+        # if abs(z_adjust-self.last_z_adjust) > limit and z_adjust != 0:
+        #     z_adjust = self.last_z_adjust +limit*z_adjust/abs(z_adjust)
+        #print("z_adjust", z_adjust)
+
+        #z_adjust = (error**2)*0.0015
+        # z_adjust = (error**2)*0.0023
+        # z_adjust = (error**3)*0.00001
 
         # Find vector from center of ball to center of plate (2D)
         ball_plate_vec = np.array((pos_data["ball"]["x"], pos_data["ball"]["y"])) - np.array((pos_data["plate"]["x"], pos_data["plate"]["y"]))
+        ball_plate_vec[0] += 0
+        ball_plate_vec[1] += 0
         # Find 2D vector that is normal to this vector
         normal_vec = np.array((-1*ball_plate_vec[1], ball_plate_vec[0], 0))
-        print("N-Vector of R", normal_vec.tolist())
+        # print("N-Vector of R", normal_vec.tolist())
         # Find 3D vector that points in direction we want the ball to move in
         correction_vec = np.array(([ball_plate_vec[0], ball_plate_vec[1], z_adjust]))
-        print("C-VECTOR", correction_vec.tolist())
+        # print("C-VECTOR", correction_vec.tolist())
 
         #print(normal_vec.tolist(), correction_vec.tolist())
         # For the ball to move in the direction of the correction-vec
         # the correction_vec and normal_vec has to lie in the plane
         self.set_plane_from_vecs(normal_vec, correction_vec)
 
+        self.last_z_adjust = z_adjust
 
     def test(self):
         """ Runs a series of commands to ensure that 
@@ -330,11 +465,7 @@ class MyServo():
         sleep(1)
 
     def moveToDeg(self, deg, wait = False):
-        # Convert deg to pulse
-        # pulse = calc.map(deg, self.max_deg, self.min_deg, self.min_pulse, self.max_pulse)
-        # Change the zero position from horizontal of plane to
-        # horizontal of servo arm
-        #pulse_correction = calc.map(self.zero_deg, self.max_deg, self.min_deg, self.min_pulse, self.max_pulse)
+        # Don't let the servo move out of its boundries
         if deg > self.max_deg:
             deg = self.max_deg
         if deg < self.min_deg:
@@ -346,12 +477,13 @@ class MyServo():
         sleep_time = abs(self.last_pulse-pulse_corrected)*0.8/1230 #0.8
         self.pwm.set_servo_pulsewidth(self.pin, pulse_corrected)
         self.last_pulse = pulse_corrected
-        logging.debug("Moving servo to", deg , "measured from when the servo arm is horizontal")
+        #logging.info(("Moving servo to", deg , "measured from when the servo arm is horizontal"))
         if wait:
             sleep(sleep_time)
         
     def detach(self):
         self.pwm.set_servo_pulsewidth(self.pin, 0)
+    
 
 class Ball:
     def __init__(self):
