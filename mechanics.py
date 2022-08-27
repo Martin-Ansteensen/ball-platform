@@ -5,8 +5,48 @@ import pigpio
 from time import sleep
 import atexit
 import logging
+import json
 
-#logging.basicConfig(level=logging.INFO)
+with open("config.json", "r") as f:
+    config_data = json.load(f)["mechanics"]
+    f.close()
+
+### GEOMETRY OF ARM ###
+# Length of servo arm (from center of rotation in joints)
+SERVO_ARM_LENGTH = config_data["geometry"]["servo_arm_length"]
+# Point where servo arm connects to servo
+SERVO_ARM_ENDPOINT = config_data["geometry"]["servo_arm_endpoint"]
+# Length of arm going from servo arm to disk
+BALL_ARM_LENGTH = config_data["geometry"]["ball_arm_length"]
+# Distance from arm to center of disk (stirct length, not pytagoras)
+BALL_ARM_OFFSET_CENTER = config_data["geometry"]["ball_arm_offset_center"]
+# Servo angel (arm pointing upwards) from parallel with ground
+MIN_SERVO_ANGEL_DEG = config_data["geometry"]["min_servo_angel_deg"] 
+# Calcualted from model. -24.2 according to F360, but ... 
+MIN_PLANE_ANGEL_DEG = config_data["geometry"]["min_plane_angel_deg"]  
+# Servo angel (arm pointing downwards) from parallel with ground
+MAX_SERVO_ANGEL_DEG = config_data["geometry"]["max_servo_angel_deg"]  
+# Calcualted from model. 25.2 deg according to F360, but ...
+MAX_PLANE_ANGEL_DEG = config_data["geometry"]["max_plane_angel_deg"]  
+
+### GEOMETRY OF DISK ###
+RADIUS = config_data["geometry"]["disk_radis"]
+
+### SERVO CONSTANTS ###
+# All angels are measured from when
+# the servo arm is horizontal
+X_SERVO_PIN = config_data["x_servo"]["servo_pin"]
+X_SERVO_MIN_DEG = config_data["x_servo"]["servo_min_deg"]
+X_SERVO_MAX_DEG = config_data["x_servo"]["servo_max_deg"]
+X_SERVO_MIN_PULSE = config_data["x_servo"]["servo_min_pulse"]
+X_SERVO_MAX_PULSE = config_data["x_servo"]["servo_max_pulse"]
+
+Y_SERVO_PIN = config_data["y_servo"]["servo_pin"]
+Y_SERVO_MIN_DEG = config_data["y_servo"]["servo_min_deg"]
+Y_SERVO_MAX_DEG = config_data["y_servo"]["servo_max_deg"]
+Y_SERVO_MIN_PULSE = config_data["y_servo"]["servo_min_pulse"]
+Y_SERVO_MAX_PULSE = config_data["y_servo"]["servo_max_pulse"]
+
 
 class MyOperations():
     """ Class containing useful math operations"""
@@ -54,7 +94,6 @@ class MyOperations():
     def map(self, x, in_min, in_max, out_min, out_max):
         """ Map input value on one scale to another. """
         return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
-
 
 # Create math instance
 calc = MyOperations()
@@ -181,16 +220,15 @@ class ArmMechanics:
         on which plane the arm operates in. Input angel in radians """
         return np.array([self.R*m.cos(angel_line), self.R*m.sin(angel_line)])
 
-    def set_servo_angel(self, angel_rad):
+    def set_servo_angel(self, angel_rad, wait_for_finish = False):
         """ Moves the servo to the desired position and updates
         its position variable """
 
         # Move servo
-        self.servo.moveToDeg(calc.to_deg(angel_rad), wait=False)
+        self.servo.moveToDeg(calc.to_deg(angel_rad), wait=wait_for_finish)
         logging.debug("Angle for " + self.axis + "-servo is ", calc.to_deg(angel_rad))
         # Save current position
-        self.current_servo_angel_rad = angel_rad
-    
+        self.current_servo_angel_rad = angel_rad 
 
 class Plane:
     def __init__(self, radius, x_arm, y_arm):
@@ -208,20 +246,18 @@ class Plane:
         self.x_angel_rad = None
         self.y_angel_rad = None
 
-        self.last_error = 0
-        self.last_z_adjust = 0
-        self.last_center_error = 0
-        self.i = 0
+        # PID
+        Kp = 2
+        Ki = 0.05
+        Kd = 35
+        factor = 0.0001
 
-        # New PID-controller
-        self.last_x_error = 0
-        self.last_y_error = 0
-        self.ball_detected_last_run = False
-        self.ix = 0
-        self.iy = 0
+        self.x_pid = PID_Controller(Kp, Ki, Kd, factor)
+        self.y_pid = PID_Controller(Kp, Ki, Kd, factor)
+
 
     def update(self):
-        """ Updates its x- and y points (moves servo). Updates normal vector """
+        """ Updates its x- and y points (calculations) Updates normal vector """
         self.x_angel_rad = self.x_arm.calc_line_angel(self.x_arm.current_servo_angel_rad)
         self.y_angel_rad = self.y_arm.calc_line_angel(self.y_arm.current_servo_angel_rad)
 
@@ -236,14 +272,14 @@ class Plane:
 
         self.normal_vector = calc.norm_vec_plane(self.center_pnt, self.x_point, self.y_point)
     
-    def set_plane_from_angels(self, x_angel_rad, y_angel_rad):
+    def set_plane_from_angels(self, x_angel_rad, y_angel_rad, servo_wait_for_finish = False):
         """ Moves the plane to a certain angel in the XZ-plane
-        and the YZ-plane """
+        and the YZ-plane (moves servo) """
         x_servo_rad = self.x_arm.calc_servo_angel(x_angel_rad)
         y_servo_rad = self.y_arm.calc_servo_angel(y_angel_rad)
         
-        self.x_arm.set_servo_angel(x_servo_rad)
-        self.y_arm.set_servo_angel(y_servo_rad)
+        self.x_arm.set_servo_angel(x_servo_rad, wait_for_finish=servo_wait_for_finish)
+        self.y_arm.set_servo_angel(y_servo_rad, wait_for_finish=servo_wait_for_finish)
 
         self.update()
     
@@ -266,184 +302,52 @@ class Plane:
         #print(str(x_rad*m.pi/180), str(y_rad*m.pi/180))
         self.set_plane_from_angels(x_rad, y_rad)
 
-    def two_axis_correct_ball(self, pos_data):
-        # Checxk if ball is detected
-        ball_detected = True
-        for i in pos_data:
-            for k in pos_data[i]:
-                if not pos_data[i][k]:
-                    ball_detected = False
-        # If the ball is not detected
-        # move the plane to zero incline
-        # and reset position variables
-        if not ball_detected:
+    def correct_ball(self, pos_data, target_pos):
+        # Check if ball is detected
+        if pos_data["ball"]["x"] == None:
+            # The ball is not detected.
+            # Move the plane to zero incline
+            # and reset the pid controllers
             self.set_plane_from_angels(0, 0)
-            self.last_x_error = 0
-            self.last_y_error = 0
-            self.ix = 0
-            self.ix = 0
+            self.x_pid.reset()
+            self.y_pid.reset()
             self.ball_detected_last_run = False
-
             return
-        
-                
+
         # Calculate error for each axis
-        x_error = (pos_data["ball"]["x"] - pos_data["plate"]["x"])*-1
-        y_error = (pos_data["ball"]["y"] - pos_data["plate"]["y"])*-1
-        if x_error == 0:
-            x_error_sign = 0
-        else:
-            x_error_sign = x_error/abs(x_error)
+        x_error = (pos_data["ball"]["x"] - target_pos["x"])*-1
+        y_error = (pos_data["ball"]["y"] - target_pos["y"])*-1
         
-        if y_error == 0:
-            y_error_sign = 0
-        else:
-            y_error_sign = y_error/abs(y_error)
+        # Compute a angle of the plane that will get the ball
+        # closer to its target
+        x_adjust = self.x_pid.compute(x_error)
+        y_adjust = self.y_pid.compute(y_error)
 
-
-        # Kp = 0.06
-        # #Kp = 4  
-
-        # Ki = 0.006
-        
-        
-        # #Kd = 0.9
-        # Kd = 30
-        
-        # reduction_factor = 0.0001
-        # print(Kp, Ki, Kd)
-        # # x-axis
-        
-
-        # px = x_error_sign*(x_error**2)*Kp
-        # #px = x_error*Kp
-        # self.ix += x_error*Ki
-        # vx = x_error - self.last_x_error
-        # #dx = (vx/abs(vx))*(vx**2)*Kd if vx != 0 else 0
-        # dx = (x_error - self.last_x_error)*Kd
-        # x_adjust = (px + self.ix + dx)*reduction_factor
-
-        # # y-axis
-        # py = y_error_sign*(y_error**2)*Kp
-        # #py = y_error*Kp
-        # self.iy += y_error
-        # vy = y_error - self.last_y_error
-        # #dy = (vy/abs(vy))*(vy**2)*Kd if vy != 0 else 0
-        # dy = (y_error - self.last_y_error)*Kd
-        # y_adjust = (py + self.iy + dy)*reduction_factor
-
-
-        Kp = 3
-        Ki = 0.05
-        Kd = 35
-        reduction_factor = 0.0001
-        print(Kp, Ki, Kd)
-        # x-axis
-        px = x_error*Kp
-        self.ix += x_error*Ki
-        dx = (x_error - self.last_x_error)*Kd
-        x_adjust = (px + self.ix + dx)*reduction_factor
-        print(px, self.ix, dx)
-
-        # y-axis
-        py = y_error*Kp
-        self.iy += y_error*Ki
-        dy = (y_error - self.last_y_error)*Kd
-        y_adjust = (py + self.iy + dy)*reduction_factor
-
-
-
-        self.last_x_error = x_error
-        self.last_y_error = y_error
-
+        # Only adjust the plane if the ball was detected
+        # last frame as well. The computations made on
+        # the first frame of the ball are not correct
         if not self.ball_detected_last_run:
             self.ball_detected_last_run = True
         else:
             self.set_plane_from_angels(x_adjust, y_adjust)
 
-                
-
-
-    def correct_ball(self, pos_data):
-        # Check that we have valid data
-        ball_detected = True
-        for object in pos_data:
-            for k in pos_data[object]:
-                if not pos_data[object][k]:
-                    ball_detected = False
-        
-        if not ball_detected:
-            self.set_plane_from_angels(0, 0)
-            self.last_center_error = 0
-            self.last_z_adjust = 0
-            self.last_pos= (None,None)
-            return
-
-        # Calculate the distance from the center of the ball to the center of the plate
-        center_error = m.sqrt((pos_data["ball"]["x"]-pos_data["plate"]["x"])**2 + (pos_data["ball"]["y"]-pos_data["plate"]["y"])**2)
-        # Position travelled
-        pos = (pos_data["ball"]["x"], pos_data["ball"]["y"])
-        # Do not do anything if the error is zero
-        if round(center_error,1) == 0:
-            return    
-        # Implement PID-controller
-
-        Kp = 2
-        Ki = 0
-        Kd = 0.22
-
-        p = (center_error**3)*Kp*0.000001
-        d = -((center_error-self.last_center_error)**2)*Kd*0.01
-        self.i += center_error*Ki
-
-            #print(x,y)
-        z_adjust = p+self.i+d
-        
-        self.last_center_error = center_error
-        self.last_pos = pos
-        # limit = 3
-        # if abs(z_adjust-self.last_z_adjust) > limit and z_adjust != 0:
-        #     z_adjust = self.last_z_adjust +limit*z_adjust/abs(z_adjust)
-        #print("z_adjust", z_adjust)
-
-        #z_adjust = (error**2)*0.0015
-        # z_adjust = (error**2)*0.0023
-        # z_adjust = (error**3)*0.00001
-
-        # Find vector from center of ball to center of plate (2D)
-        ball_plate_vec = np.array((pos_data["ball"]["x"], pos_data["ball"]["y"])) - np.array((pos_data["plate"]["x"], pos_data["plate"]["y"]))
-        ball_plate_vec[0] += 0
-        ball_plate_vec[1] += 0
-        # Find 2D vector that is normal to this vector
-        normal_vec = np.array((-1*ball_plate_vec[1], ball_plate_vec[0], 0))
-        # print("N-Vector of R", normal_vec.tolist())
-        # Find 3D vector that points in direction we want the ball to move in
-        correction_vec = np.array(([ball_plate_vec[0], ball_plate_vec[1], z_adjust]))
-        # print("C-VECTOR", correction_vec.tolist())
-
-        #print(normal_vec.tolist(), correction_vec.tolist())
-        # For the ball to move in the direction of the correction-vec
-        # the correction_vec and normal_vec has to lie in the plane
-        self.set_plane_from_vecs(normal_vec, correction_vec)
-
-        self.last_z_adjust = z_adjust
-
+            
     def test(self):
         """ Runs a series of commands to ensure that 
         the plane is working as intended"""
         logging.info("Slow test")
 
         logging.info("Moving to horizontal position")
-        self.set_plane_from_angels(0, 0)
+        self.set_plane_from_angels(0, 0, servo_wait_for_finish = True)
         sleep(1)
         logging.info("Giving disk -20 deg rotation in x, (plane pointing away from x-servo")
-        self.set_plane_from_angels(-20*m.pi/180, 0)
+        self.set_plane_from_angels(-20*m.pi/180, 0, servo_wait_for_finish = True)
         sleep(1)
         logging.info("Giving disk -20 deg rotation in y, (plane pointing away from x-servo")
-        self.set_plane_from_angels(0,-20*m.pi/180)
+        self.set_plane_from_angels(0,-20*m.pi/180, servo_wait_for_finish = True)
         sleep(1)
         logging.info("Moving to horizontal position")
-        self.set_plane_from_angels(0, 0)
+        self.set_plane_from_angels(0, 0, servo_wait_for_finish = True)
 
 class MyServo():
     # Servo handler
@@ -460,11 +364,12 @@ class MyServo():
         self.zero_deg = 0
 
         # Move to horizontal position of the plane
-        print("Move to horizontal position of the plane")
-        self.moveToDeg(0)
-        sleep(1)
+        self.moveToDeg(0, wait=True)
+        print("Servo move init (horizontal servo arm), zero_deg is not set yet: ", self.zero_deg)
+
 
     def moveToDeg(self, deg, wait = False):
+        deg += self.zero_deg
         # Don't let the servo move out of its boundries
         if deg > self.max_deg:
             deg = self.max_deg
@@ -484,63 +389,67 @@ class MyServo():
     def detach(self):
         self.pwm.set_servo_pulsewidth(self.pin, 0)
     
+class PID_Controller():
+    def __init__(self, Kp, Ki, Kd, reduction_factor = 1):
+        self.kp = Kp
+        self.ki = Ki
+        self.kd = Kd
+        self.reduction_factor = reduction_factor
 
-class Ball:
-    def __init__(self):
-        self.mass = None
-        self.radius = None
-        self.position = [None, None, None]
+        self.last_error = None
+
+        self.p = 0
+        self.i = 0
+        self.d = 0
     
-    def calc_position(self, time_intervall):
-        """ Calculates the position of the ball travelling in a
-        straight line from its current position after a given
-        time_intervall (given in seconds)"""
-        pass
+    def compute(self, error):
+        self.p = error*self.kp
+        self.i += error*self.ki
+        self.d = (error - self.last_error)*self.kd
+        correction = (self.p + self.i + self.d)*self.reduction_factor
+        self.last_error = error
+
+        return correction
     
-    def acceleration(self, normal_vector):
-        """ Calculates the acceleration of the ball given the 
-        normal vector of the plane the ball is on"""
-        pass
+    def reset(self):
+        self.p = 0
+        self.i = 0
+        self.d = 0
+        self.last_error = 0
 
 
-if __name__=='__main__':
-    ### GEOMETRY OF ARM ###
-    SERVO_ARM_LENGTH = 45
-    SERVO_ARM_ENDPOINT = (40.11, -51.64)
-    BALL_ARM_LENGTH = 54
-    BALL_ARM_OFFSET_CENTER = 85.18
-    MIN_SERVO_ANGEL_DEG = -60  # Servo angel (arm pointing upwards) from parallel with ground
-    MIN_PLANE_ANGEL_DEG = -26.23  # Calcualted from model. -24.2 according to F360, but ... 
-    MAX_SERVO_ANGEL_DEG = 47  # Servo angel (arm pointing downwards) from parallel with ground
-    MAX_PLANE_ANGEL_DEG = 24.63  # Calcualted from model. 25.2 deg according to F360, but ...
-
-    ### GEOMETRY OF disk ###
-    RADIUS = 125
-
-
-    ### INITIALIZE SERVO MOTORS ###
-    # All angles are measured with zero as
-    # when the servo arm is horizontal
-
-    x_servo = MyServo(21, -87-4, 52-4, 860, 2080)
+def setup():
+    # Initialize servo motors
+    x_servo = MyServo(X_SERVO_PIN, X_SERVO_MIN_DEG, X_SERVO_MAX_DEG, X_SERVO_MIN_PULSE, X_SERVO_MAX_PULSE)
     atexit.register(x_servo.detach)
-    y_servo = MyServo(20, -87-4, 56-4, 2080, 850)
+    y_servo = MyServo(Y_SERVO_PIN, Y_SERVO_MIN_DEG, Y_SERVO_MAX_DEG,Y_SERVO_MIN_PULSE, Y_SERVO_MAX_PULSE)
     atexit.register(y_servo.detach)
 
     # Define the mechanics controlling the motion of the disk in the XZ-plane
     x_arm = ArmMechanics("x", SERVO_ARM_LENGTH, SERVO_ARM_ENDPOINT, BALL_ARM_LENGTH, BALL_ARM_OFFSET_CENTER,
     MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG, servo=x_servo)
-    # Set the current value of the servo to match a flat plane
-    x_arm.zero = x_arm.calc_servo_angel(0)
+    # Find angle of servo that makes plane flat, and 
+    # set this as the new zero as servo position
+    x_arm.zero_deg = calc.to_deg(x_arm.calc_servo_angel(0)) 
 
     # Define the mechanics controlling the motion of the disk in the YZ-plane
     y_arm = ArmMechanics("y", SERVO_ARM_LENGTH, SERVO_ARM_ENDPOINT, BALL_ARM_LENGTH, BALL_ARM_OFFSET_CENTER,
     MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG, servo=y_servo)
-    # Set the current value of the servo to match a flat plane
-    y_arm.zero =  y_arm.calc_servo_angel(0)
+    # Find angle of servo that makes plane flat, and 
+    # set this as the new zero as servo position
+    y_arm.zero_deg =  calc.to_deg(y_arm.calc_servo_angel(0))
 
     # Define the plane
     plane = Plane(RADIUS, x_arm, y_arm)
     plane.update()
+    # Make the plane flat
+    print("Init plane to zero deg incline")
+    plane.set_plane_from_angels(0,0, servo_wait_for_finish = True)
+    return plane
+
+if __name__=='__main__':
+    # Do setuo
+    plane_instance = setup()
+
     # Test plane by giving it different slopes in many directions
-    plane.test()
+    plane_instance.test()

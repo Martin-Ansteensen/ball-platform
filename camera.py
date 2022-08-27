@@ -10,88 +10,56 @@ import numpy as np
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 import time
-import mechanics as mech
-
+import argparse
 import logging
-logging.basicConfig(level=logging.ERROR)
+import json
 
-
-### GEOMETRY OF ARM ###
-SERVO_ARM_LENGTH = 45
-SERVO_ARM_ENDPOINT = (40.11, -51.64)
-BALL_ARM_LENGTH = 54
-BALL_ARM_OFFSET_CENTER = 85.18
-MIN_SERVO_ANGEL_DEG = -60  # Servo angel (arm pointing upwards) from parallel with ground
-MIN_PLANE_ANGEL_DEG = -26.23  # Calcualted from model. -24.2 according to F360, but ... 
-MAX_SERVO_ANGEL_DEG = 47  # Servo angel (arm pointing downwards) from parallel with ground
-MAX_PLANE_ANGEL_DEG = 24.63  # Calcualted from model. 25.2 deg according to F360, but ...
-
-### GEOMETRY OF disk ###
-RADIUS = 125
-
-
-### INITIALIZE SERVO MOTORS ###
-# All angles are measured as zero
-# when the servo arm is horizontal
-x_servo = mech.MyServo(21, -87-4, 52-4, 860, 2080)
-atexit.register(x_servo.detach)
-y_servo = mech.MyServo(20, -87-4, 56-4, 2080, 850)
-atexit.register(y_servo.detach)
-
-# Define the mechanics controlling the motion of the disk in the XZ-plane
-x_arm = mech.ArmMechanics("x", SERVO_ARM_LENGTH, SERVO_ARM_ENDPOINT, BALL_ARM_LENGTH, BALL_ARM_OFFSET_CENTER,
-MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG, servo=x_servo)
-# Set the current value of the servo to match a flat plane
-x_arm.zero = x_arm.calc_servo_angel(0)
-
-# Define the mechanics controlling the motion of the disk in the YZ-plane
-y_arm = mech.ArmMechanics("y", SERVO_ARM_LENGTH, SERVO_ARM_ENDPOINT, BALL_ARM_LENGTH, BALL_ARM_OFFSET_CENTER,
-MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG, servo=y_servo)
-# Set the current value of the servo to match a flat plane
-y_arm.zero =  y_arm.calc_servo_angel(0)
-
-# Define the plane
-plane = mech.Plane(RADIUS, x_arm, y_arm)
-plane.update()
-
-
-
-SHOW_CV2_WINDOW = False
-PI_CAMERA = True
+# Look into wrong format with cv2
 
 class Camera():
     """ Class for handling camera """
-    def __init__(self):
-        # print(cv2.useOptimized())
-        self.frame_height = 480
-        self.frame_width = 640
-        self.framrate = 30
-        self.camera_rotation = cv2.ROTATE_90_COUNTERCLOCKWISE
+    def __init__(self, pi_camera = True, show_cv2_windows = False):
+        with open("config.json", "r") as f:
+            config_data = json.load(f)["camera"]
+        # Use PiCamera module or cv2.VideoCapture
+        self.use_pi_camera = pi_camera
+        # Show image processing in cv2 windows
+        self.show_cv2_windows = show_cv2_windows
+        # Video varianles
+        self.frame_width = config_data["frame_width"]
+        self.frame_height = config_data["frame_height"]
+        self.framrate = config_data["framerate"]
+        self.camera_rotation = eval(config_data["camera_rotation"])
         # Turn on LED-ring for an even lighting
         self.leds = neopixel.NeoPixel(board.D10, 24, brightness=1, auto_write=False)
         self.leds.fill((255,255,255))
         self.leds.show()
         # Turn off LEDs when program stops
         atexit.register(self.turn_off_leds)
-        if PI_CAMERA:
+        
+        if self.use_pi_camera:
+            logging.info("Using PiCamera module for video")
+            # Initialize PiCamera video stream
             self.videostream = PiCamera()
             self.videostream.resolution = (self.frame_width, self.frame_height)
-            self.videostream.framerate = 32
+            self.videostream.framerate = self.framrate
             self.rawCapture = PiRGBArray(self.videostream, size=(self.frame_width, self.frame_height))
             # allow the camera to warmup    
             time.sleep(0.1)
         else:
+            logging.info("Using cv2.VideoCapture module for video")
             # Begin video stream
             self.videostream = cv2.VideoCapture(0)
             self.videostream.set(3, self.frame_width)
             self.videostream.set(4, self.frame_height)
-            self.videostream.set(cv2.CAP_PROP_FPS, self.framrate)
+            # Set framerate?
             
             self.static = None
 
             # Get the first frame
             ret, frame = self.videostream.read()
-            print("The resolution of the images: ", frame.shape[0], frame.shape[1]) # Print the resolution of the image
+            # Print the resolution of the image
+            logging.info(f"The resolution of the images: {frame.shape[0]}, {frame.shape[1]}") 
             
             # Frame for simulation
             self.static = cv2.rotate(frame, self.camera_rotation)
@@ -102,13 +70,18 @@ class Camera():
             self.frame_width = frame.shape[1]
 
 
-        # Default value for slider
+        # Default value for slider controlling thresholding of image
         self.tresh_lower = 69
+        # Number of frames retrieved
+        self.num_frames = 0
         
-        if SHOW_CV2_WINDOW:
+        if self.show_cv2_windows:
+            logging.info("Will be displaying image processing in cv2 windows")
             # Create slider to threshold image correctly
             cv2.namedWindow("Preprocessed image")
             cv2.createTrackbar("slider", "Preprocessed image", self.tresh_lower,255, self.slider_change)  
+        else:
+            logging.info("Not displaying image processing in cv2 windows")
 
         # Dict for storing position-data of plate and ball
         self.objects = {"plate":{"x":None, "y":None, "r":None}, "ball":{"x":None, "y":None, "r":None}}
@@ -137,7 +110,7 @@ class Camera():
         kernel = np.ones((5,5), np.uint8)
         erode = cv2.erode(threshold, kernel, iterations=1)
         
-        if SHOW_CV2_WINDOW:	
+        if self.show_cv2_windows:	
             # Display the processed image to the user
             cv2.imshow("Preprocessed image", erode)
             
@@ -175,11 +148,11 @@ class Camera():
             if circle_area/picture_area > 0.3:
                 # Assume that the first circle in the contours 
                 # list is the plate (it will be the largest round object).
-                self.objects["plate"] = {"x":int(center[0]), "y":int(center[1]), "r":radius+10}
+                self.objects["plate"] = {"x":int(center[0]), "y":int(center[1]), "r":radius}
                 return
 
-    def find_positions(self,frame):
-        """ Locates ball and plate in image. Highlights them."""
+    def find_ball(self,frame):
+        """ Locates ball in image. Highlights them."""
         frame, contours = self.find_contours(frame)
 
         # Loop over each contour
@@ -215,12 +188,6 @@ class Camera():
                 # cv2.drawContours(frame, [contour], 0, (0, 255, 0), 3)
                 pass
 
-            # if SHOW_CV2_WINDOW:
-            #     # Draw center of the circle onto the image
-            #     cv2.circle(frame, (int(center[0]), int(center[1])), radius=3, color=(0,255,0), thickness=3)
-            #     # Draw the perimeter of the circle onto the image
-            #     cv2.circle(frame, (int(center[0]), int(center[1])), int(radius), (255, 0, 0), 2)
-
             # Maybe the ball
             found_ball = False
             # It is not the plate
@@ -234,13 +201,13 @@ class Camera():
                 b = center[1] > self.objects["plate"]["y"] - self.objects["plate"]["r"] and center[1] < self.objects["plate"]["y"] + self.objects["plate"]["r"]
                 # If all of the conditions are met, the circle is on the plate.
                 # Assume that this circle is the ball
-                if not a and b:
+                if not (a and b):
                     # We have not found the ball, try the next circle
                     continue
             
                 # This circle is the ball
                 self.objects["ball"] = {"x": int(center[0]), "y":int(center[1])}
-                if SHOW_CV2_WINDOW:
+                if self.show_cv2_windows:
                     # Higlight the ball
                     cv2.circle(frame, (self.objects["ball"]["x"], self.objects["ball"]["y"]), int(radius), (0, 0, 255), 10)
                     # Draw a line from the center of the ball to the center of the plate
@@ -253,7 +220,7 @@ class Camera():
                 # We have not found the ball
                 self.objects["ball"] = {"x": None, "y":None}
             
-        if SHOW_CV2_WINDOW:
+        if self.show_cv2_windows:
             # Draw plate onto image
             cv2.circle(frame, (int(self.objects["plate"]["x"]), int(self.objects["plate"]["y"])), radius=3, color=(0,255,0), thickness=3)
             # Draw the perimeter of the circle onto the image
@@ -281,17 +248,25 @@ class Camera():
         cv2.imshow("Final", draw)
         key = cv2.waitKey(1) & 0xFF 
 
-    def piCameraNextFrame(self):
-        i = 0
+    def pi_camera_next_frame(self,do_other_stuff):
+        """ Runs forever as loop. Gets the next frame, proccesses it
+		and checks if the user wants to quit. Then does the
+        funtion provided."""
         for frame in self.videostream.capture_continuous(self.rawCapture, format="bgr", use_video_port=True):
 
             # grab the raw NumPy array representing the image, then initialize the timestamp
             # and occupied/unoccupied text
             image = frame.array
-            if i == 2:
+            # Use the first 3 frame to locate the plate
+            # in the image
+            if self.num_frames <= 2:
                 self.locate_plate(image)
-            if i > 2:
-                self.find_positions(image)
+                self.num_frames += 1
+
+            elif self.num_frames > 2:
+                self.find_ball(image)
+                if do_other_stuff:
+                    do_other_stuff()
             
             key = cv2.waitKey(1) & 0xFF
             # clear the stream in preparation for the next frame
@@ -300,22 +275,22 @@ class Camera():
             if key == ord("q"):
                 break
 
-            pos_data = cam.get_positions()
-            # Correct the position of the ball
-            #plane.correct_ball(pos_data)
-            plane.two_axis_correct_ball(pos_data)
-            i += 1
 
-
-
-    def next_frame(self):
+    def cv2_videocapture_next_frame(self):
         """ Gets the next frame, proccesses it
 		and checks if the user wants to quit or
 		save the frame """
         # Get the next frame
         ret, frame = self.videostream.read()
         # Locates  and highlighrs ball and plate in image
-        self.find_positions(frame)
+
+        if self.num_frames <= 2:
+            self.locate_plate(frame)
+            self.num_frames += 1
+
+        elif self.num_frames > 2:
+            self.find_ball(frame)
+        
 		# Get the status of the keyboard keys
         key = cv2.waitKey(1) & 0xFF 
 		# Exit the program if the user presses "q" or "x"
@@ -326,10 +301,25 @@ class Camera():
 		
 
 if __name__=='__main__':
-    cam = Camera()
+    logging.basicConfig(level=logging.INFO)
 
-    if PI_CAMERA:
-        cam.piCameraNextFrame()
+    # Arguments from command line
+    parser = argparse.ArgumentParser()
+    # Argument for using the PiCamera module
+    parser.add_argument("--picam", action="store_true", help="Add if you want to use the PiCamera module")
+    parser.add_argument("--no-picam", dest="picam", action="store_false", help="Add if you want to use standard cv2.VideoCapture module")
+    parser.set_defaults(picam=True)
+    # Argument for showing image processing windows
+    parser.add_argument("--show", action="store_true", help="Add if you want to display cv2 windows showing the process")
+    parser.add_argument("--no-show", dest="show", action="store_false", help="Add if you do not want to display cv2 windows")
+    parser.set_defaults(show=False)
+    # Get arguments passed through command line
+    args = parser.parse_args()
+
+    cam = Camera(args.picam, args.show)
+
+    if cam.use_pi_camera:
+        cam.pi_camera_next_frame(None)
     else:
         while True:
-            cam.next_frame()
+            cam.cv2_videocapture_next_frame()

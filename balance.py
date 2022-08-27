@@ -1,62 +1,47 @@
 import mechanics as mech
 import camera
-import atexit
+import argparse
+import logging
 
-import numpy as np
-import math
-# Init camera
-cam = camera.Camera()
-
-### GEOMETRY OF ARM ###
-SERVO_ARM_LENGTH = 45
-SERVO_ARM_ENDPOINT = (40.11, -51.64)
-BALL_ARM_LENGTH = 54
-BALL_ARM_OFFSET_CENTER = 85.18
-MIN_SERVO_ANGEL_DEG = -60  # Servo angel (arm pointing upwards) from parallel with ground
-MIN_PLANE_ANGEL_DEG = -26.23  # Calcualted from model. -24.2 according to F360, but ... 
-MAX_SERVO_ANGEL_DEG = 47  # Servo angel (arm pointing downwards) from parallel with ground
-MAX_PLANE_ANGEL_DEG = 24.63  # Calcualted from model. 25.2 deg according to F360, but ...
-
-### GEOMETRY OF disk ###
-RADIUS = 125
+# Do servo setup, and math stuff
+plane_instance = mech.setup()
 
 
-### INITIALIZE SERVO MOTORS ###
-# All angles are measured as zero
-# when the servo arm is horizontal
-x_servo = mech.MyServo(21, -87-4, 52-4, 860, 2080)
-atexit.register(x_servo.detach)
-y_servo = mech.MyServo(20, -87-4, 56-4, 2080, 850)
-atexit.register(y_servo.detach)
-
-# Define the mechanics controlling the motion of the disk in the XZ-plane
-x_arm = mech.ArmMechanics("x", SERVO_ARM_LENGTH, SERVO_ARM_ENDPOINT, BALL_ARM_LENGTH, BALL_ARM_OFFSET_CENTER,
-MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG, servo=x_servo)
-# Set the current value of the servo to match a flat plane
-x_arm.zero = x_arm.calc_servo_angel(0)
-
-# Define the mechanics controlling the motion of the disk in the YZ-plane
-y_arm = mech.ArmMechanics("y", SERVO_ARM_LENGTH, SERVO_ARM_ENDPOINT, BALL_ARM_LENGTH, BALL_ARM_OFFSET_CENTER,
-MIN_SERVO_ANGEL_DEG, MIN_PLANE_ANGEL_DEG, MAX_SERVO_ANGEL_DEG, MAX_PLANE_ANGEL_DEG, servo=y_servo)
-# Set the current value of the servo to match a flat plane
-y_arm.zero =  y_arm.calc_servo_angel(0)
-
-# Define the plane
-plane = mech.Plane(RADIUS, x_arm, y_arm)
-plane.update()
-
-# Consider saving what the camera detects as the center of the plate
-# at this point, since it will not change. Then, later,
+def do_stuff():
+    # Get dict with position data from camera
+    pos_data = cam.get_positions()
+    # Set target_positon for ball
+    ball_target_pos = pos_data["plate"]
+    # ball_target_pos = {"x":217 + 100, "y": 332 + 100}
+    # Correct the position of the ball
+    plane_instance.correct_ball(pos_data, ball_target_pos)
 
 if __name__ == '__main__':
-    while True:
-        # Get the frame from the camera
-        cam.next_frame()
-        #cam.simulate()
-        # Save the current positions of the ball
-        # and plate to the data-variable
-        pos_data = cam.get_positions()
-        # Correct the position of the ball
-        plane.correct_ball(pos_data)
+    logging.basicConfig(level=logging.INFO)
+
+    # Arguments from command line
+    parser = argparse.ArgumentParser()
+    # Argument for using the PiCamera module
+    parser.add_argument("--picam", action="store_true", help="Add if you want to use the PiCamera module")
+    parser.add_argument("--no-picam", dest="picam", action="store_false", help="Add if you want to use standard cv2.VideoCapture module")
+    parser.set_defaults(picam=True)
+    # Argument for showing image processing windows
+    parser.add_argument("--show", action="store_true", help="Add if you want to display cv2 windows showing the process")
+    parser.add_argument("--no-show", dest="show", action="store_false", help="Add if you do not want to display cv2 windows")
+    parser.set_defaults(show=False)
+    # Get arguments passed through command line
+    args = parser.parse_args()
+
+    # Initialze camera
+    cam = camera.Camera(args.picam, args.show)
+
+    # Start video
+    if cam.use_pi_camera:
+        cam.pi_camera_next_frame(do_stuff)
+    else:
+        while True:
+            cam.cv2_videocapture_next_frame()
+            do_stuff()
+
 
 
