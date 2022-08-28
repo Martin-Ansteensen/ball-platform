@@ -71,7 +71,7 @@ class Camera():
 
 
         # Default value for slider controlling thresholding of image
-        self.tresh_lower = 69
+        self.tresh_lower = config_data["cv2_threshold"]
         # Number of frames retrieved
         self.num_frames = 0
         
@@ -96,6 +96,15 @@ class Camera():
         """ Function called when value of slider changes """
         # Update the value used for thresholding the image
         self.tresh_lower = value
+        # Load json file
+        with open("config.json" "r") as f:
+            data = json.load(f)
+        # Change deafult value
+        data["camera"]["cv2_threshold"] = value
+        # Write to file
+        with open("config.json" "w") as f:
+            json.dump(data, f, indent=4)
+
 
     def find_contours(self, frame):
         """Finds contours in image"""

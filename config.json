@@ -30,9 +30,8 @@
         "frame_width": 640,
         "frame_height": 480,
         "framerate": 32,
-        "camera_rotation": "cv2.ROTATE_90_COUNTERCLOCKWISE"
-
-
+        "camera_rotation": "cv2.ROTATE_90_COUNTERCLOCKWISE",
+        "cv2_threshold": 80
 
     }
 
