@@ -6,8 +6,12 @@ from time import sleep
 import atexit
 import logging
 import json
+import os
 
-with open("config.json", "r") as f:
+# Path to current directory. Important when running as systemd service
+path = os.path.dirname(os.path.abspath(__file__)) + "/"
+# Open config file
+with open(path + "config.json", "r") as f:
     config_data = json.load(f)["mechanics"]
     f.close()
 

@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-import imutils
 import board
 import neopixel
 import atexit
@@ -13,13 +12,17 @@ import time
 import argparse
 import logging
 import json
+import os
 
 # Look into wrong format with cv2
 
 class Camera():
     """ Class for handling camera """
     def __init__(self, pi_camera = True, show_cv2_windows = False):
-        with open("config.json", "r") as f:
+        # Path to current directory. Important when running as systemd service
+        self.path = os.path.dirname(os.path.abspath(__file__)) + "/"
+        # Open config file
+        with open(self.path + "config.json", "r") as f:
             config_data = json.load(f)["camera"]
         # Use PiCamera module or cv2.VideoCapture
         self.use_pi_camera = pi_camera
@@ -97,12 +100,12 @@ class Camera():
         # Update the value used for thresholding the image
         self.tresh_lower = value
         # Load json file
-        with open("config.json" "r") as f:
+        with open(self.path + "config.json" "r") as f:
             data = json.load(f)
         # Change deafult value
         data["camera"]["cv2_threshold"] = value
         # Write to file
-        with open("config.json" "w") as f:
+        with open(self.path + "config.json" "w") as f:
             json.dump(data, f, indent=4)
 
 

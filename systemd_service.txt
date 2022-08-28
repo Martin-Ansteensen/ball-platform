@@ -1,0 +1,8 @@
+[Unit]
+Description=Systemd service for running radiot
+After=multi-user.target
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/ball-platform/balance.py
+User=pi
+[Install]
+WantedBy=multi-user.target
