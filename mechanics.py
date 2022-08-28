@@ -246,14 +246,53 @@ class Plane:
         self.x_angel_rad = None
         self.y_angel_rad = None
 
-        # PID
-        Kp = 2
-        Ki = 0.05
-        Kd = 35
-        factor = 0.0001
+        self.ball_detected_last_run = False
 
-        self.x_pid = PID_Controller(Kp, Ki, Kd, factor)
-        self.y_pid = PID_Controller(Kp, Ki, Kd, factor)
+        profile_names = ["linear", "cubic", "mix"]
+
+
+        pid_profiles = {
+            profile_names[0]: {
+                "kp": 2,
+                "ki": 0.05,
+                "kd": 35,
+                "factor": 0.0001
+            },
+            profile_names[1]: {
+                "kp": 0.2,
+                "ki": 0.02,
+                "kd": 2,
+                "factor": 0.00001
+            },
+            profile_names[2]: {
+                "kp": 25,
+                "ki": 500,
+                "kd": 2,
+                "factor": 0.00001
+            }
+        }
+
+        profile = profile_names[2]
+        
+        Kp = pid_profiles[profile]["kp"]
+        Ki = pid_profiles[profile]["ki"]
+        Kd = pid_profiles[profile]["kd"]
+        factor = pid_profiles[profile]["factor"]
+
+        print(f"Using {profile}-PID Kp: {Kp} Ki: {Ki} Kd: {Kd} and Kr: {factor}")
+
+        if profile == "linear":
+            self.x_pid = PID_Controller(Kp, Ki, Kd, factor)
+            self.y_pid = PID_Controller(Kp, Ki, Kd, factor)
+        
+        elif profile == "cubic":
+            self.x_pid = Cubic_PID_Controller(Kp, Ki, Kd, factor)
+            self.y_pid = Cubic_PID_Controller(Kp, Ki, Kd, factor)
+
+        elif profile == "mix":
+            self.x_pid = Mix_PID_Controller(Kp, Ki, Kd, factor)
+            self.y_pid = Mix_PID_Controller(Kp, Ki, Kd, factor)
+
 
 
     def update(self):
@@ -283,23 +322,14 @@ class Plane:
 
         self.update()
     
-    def set_plane_from_vec_and_error(self, vec, e):
-        """ Moves the plane so that has a slope given by the error, pointing along the vector"""
-        pass
-
     def set_plane_from_vecs(self, u, v):
         " Moves plane so that its normal vector is the cross product of the two given vector"
         # Calc norm vec
         norm_vec = np.cross(u, v)
-        # print("PLANE VEC", norm_vec.tolist())
         # Get x and y angel of plane
         x_rad = np.arcsin(norm_vec[0]/norm_vec[2])
         y_rad = np.arcsin(norm_vec[1]/norm_vec[2])
-        # print("x", x_rad*180/m.pi)
-        # print("y", y_rad*180/m.pi)
-
         # Set plane according to these angles
-        #print(str(x_rad*m.pi/180), str(y_rad*m.pi/180))
         self.set_plane_from_angels(x_rad, y_rad)
 
     def correct_ball(self, pos_data, target_pos):
@@ -330,7 +360,6 @@ class Plane:
             self.ball_detected_last_run = True
         else:
             self.set_plane_from_angels(x_adjust, y_adjust)
-
             
     def test(self):
         """ Runs a series of commands to ensure that 
@@ -390,18 +419,23 @@ class MyServo():
         self.pwm.set_servo_pulsewidth(self.pin, 0)
     
 class PID_Controller():
+    """ Normal PID-controller using error provided
+    for calculations """
+
     def __init__(self, Kp, Ki, Kd, reduction_factor = 1):
         self.kp = Kp
         self.ki = Ki
         self.kd = Kd
         self.reduction_factor = reduction_factor
 
-        self.last_error = None
+        self.last_error = 0
 
         self.p = 0
         self.i = 0
         self.d = 0
     
+    
+
     def compute(self, error):
         self.p = error*self.kp
         self.i += error*self.ki
@@ -417,6 +451,68 @@ class PID_Controller():
         self.d = 0
         self.last_error = 0
 
+        # When cubing the sign needs to be
+        # reimplented
+
+class Cubic_PID_Controller(PID_Controller):
+    def __init__(self, Kp, Ki, Kd, reduction_factor = 1):
+        super().__init__(Kp, Ki, Kd, reduction_factor)
+
+    def compute(self, error):
+        if error == 0:
+            error_sign = 0
+        else:
+            error_sign = error/abs(error)
+        
+        error *= error*error_sign
+
+        self.p = error*self.kp
+        self.i += error*self.ki
+        self.d = (error - self.last_error)*self.kd
+        correction = (self.p + self.i + self.d)*self.reduction_factor
+        self.last_error = error
+
+        return correction
+
+class Mix_PID_Controller(PID_Controller):
+    def __init__(self, Kp, Ki, Kd, reduction_factor = 1):
+        super().__init__(Kp, Ki, Kd, reduction_factor)
+        self.cube_error = 0
+        self.last_cube_error = 0
+
+    def compute(self, error):
+        if error == 0:
+            error_sign = 0
+            inverse_error = 0
+        else:
+            error_sign = error/abs(error)
+            # if error < 5 do not do anything
+            inverse_error = 1/error
+        self.cube_error = error*error*error_sign
+        self.sqrt_error = m.sqrt(abs(error))*error_sign
+        
+        if abs(error) < 10:
+            inverse_error = error*(self.kp/self.ki)
+            self.i += inverse_error*self.ki
+            self.i *= 0.8
+
+        else:
+            self.i += inverse_error*self.ki
+        
+        self.p = error*self.kp
+        self.d = (self.cube_error - self.last_cube_error)*self.kd
+        correction = (self.p + self.i + self.d)*self.reduction_factor
+        self.last_error = error
+        self.last_cube_error = self.cube_error
+
+        return correction
+
+    def reset(self):
+        self.p = 0
+        self.i = 0
+        self.d = 0
+        self.last_error = 0
+        self.last_cube_error = 0
 
 def setup():
     # Initialize servo motors
