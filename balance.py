@@ -11,10 +11,9 @@ def do_stuff():
     # Get dict with position data from camera
     pos_data = cam.get_positions()
     # Set target_positon for ball
-    ball_target_pos = pos_data["plate"]
-    # ball_target_pos = {"x":217 + 100, "y": 332 + 100}
+    plane_instance.set_ball_target_point(pos_data["plate"]) 
     # Correct the position of the ball
-    plane_instance.correct_ball(pos_data, ball_target_pos)
+    plane_instance.correct_ball(pos_data)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

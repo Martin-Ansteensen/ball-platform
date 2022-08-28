@@ -251,7 +251,7 @@ class Plane:
         self.y_angel_rad = None
 
         self.ball_detected_last_run = False
-
+        self.ball_target_point = (None, None)
         profile_names = ["linear", "cubic", "mix"]
 
 
@@ -336,7 +336,9 @@ class Plane:
         # Set plane according to these angles
         self.set_plane_from_angels(x_rad, y_rad)
 
-    def correct_ball(self, pos_data, target_pos):
+    def correct_ball(self, pos_data):
+        # Get ball target position
+        target_pos = self.get_ball_target_point()
         # Check if ball is detected
         if pos_data["ball"]["x"] == None:
             # The ball is not detected.
@@ -364,7 +366,14 @@ class Plane:
             self.ball_detected_last_run = True
         else:
             self.set_plane_from_angels(x_adjust, y_adjust)
-            
+
+    def set_ball_target_point(self, point):
+        self.ball_target_point = point
+
+    def get_ball_target_point(self):
+        return self.ball_target_point
+
+
     def test(self):
         """ Runs a series of commands to ensure that 
         the plane is working as intended"""
