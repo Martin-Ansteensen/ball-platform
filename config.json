@@ -12,7 +12,7 @@
             "disk_radis": 125
         },
         "x_servo":{
-            "servo_pin": 21,
+            "servo_pin": 26,
             "servo_min_deg": -91,
             "servo_max_deg": 48,
             "servo_min_pulse": 860,

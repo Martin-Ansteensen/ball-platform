@@ -339,6 +339,7 @@ class Plane:
     def correct_ball(self, pos_data):
         # Get ball target position
         target_pos = self.get_ball_target_point()
+
         # Check if ball is detected
         if pos_data["ball"]["x"] == None:
             # The ball is not detected.
@@ -459,6 +460,7 @@ class PID_Controller():
         return correction
     
     def reset(self):
+        print("Lost ball, PID resetting")
         self.p = 0
         self.i = 0
         self.d = 0
@@ -521,6 +523,7 @@ class Mix_PID_Controller(PID_Controller):
         return correction
 
     def reset(self):
+        print("Lost ball, PID resetting")
         self.p = 0
         self.i = 0
         self.d = 0
