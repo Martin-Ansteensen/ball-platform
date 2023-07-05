@@ -18,7 +18,7 @@ Where J2 is given by
 where u is the angle of the servo located at J1, and x(J1) and y(J1) is the x- and y-position of J1 relative to C.
 
 ## Inverse kinematics
-As the function used to calculate the forward kinematics is monotonic (at least with the dimensions of my robot), I did not bother calculting the inverse kinematics. Instead, I perform a binary search on the forward kinematics function (shown below, where the inputs will range from -1.05 to 0.82)
+As the function used to calculate the forward kinematics is monotonic (at least with the dimensions of my robot), I did not bother calculating the inverse kinematics. Instead, I perform a binary search on the forward kinematics function (shown below, where the inputs will range from -1.05 to 0.82)
 
 ![function](https://github.com/Martin-Ansteensen/ball-platform/assets/50178947/0bd60cb9-3e6c-4774-ab28-4dd2aff8223a)
 
