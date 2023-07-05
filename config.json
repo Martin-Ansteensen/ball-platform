@@ -1,15 +1,15 @@
 {
     "mechanics":{
         "geometry":{
-            "servo_arm_length": 45,
-            "servo_arm_endpoint": [40.11, -51.64],
-            "ball_arm_length": 54,
-            "ball_arm_offset_center": 85.15,
-            "min_servo_angel_deg": -60,
-            "min_plane_angel_deg": -26.23,
-            "max_servo_angel_deg": 47,
-            "max_plane_angel_deg": 24.63,
-            "disk_radis": 125
+            "L1": 45,
+            "J1": [40.11, -51.64],
+            "L2": 54,
+            "D1": 85.15,
+            "min_servo_angle_deg": -60,
+            "min_plane_angle_deg": -26.23,
+            "max_servo_angle_deg": 47,
+            "max_plane_angle_deg": 24.63,
+            "disk_radius": 125
         },
         "x_servo":{
             "servo_pin": 26,

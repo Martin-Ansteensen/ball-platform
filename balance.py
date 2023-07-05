@@ -7,7 +7,7 @@ import logging
 plane_instance = mech.setup()
 
 
-def do_stuff():
+def find_and_correct_ball():
     # Get dict with position data from camera
     pos_data = cam.get_positions()
     # Set target_positon for ball
@@ -36,11 +36,11 @@ if __name__ == '__main__':
 
     # Start video
     if cam.use_pi_camera:
-        cam.pi_camera_next_frame(do_stuff)
+        cam.pi_camera_next_frame(find_and_correct_ball)
     else:
         while True:
             cam.cv2_videocapture_next_frame()
-            do_stuff()
+            find_and_correct_ball()
 
 
 

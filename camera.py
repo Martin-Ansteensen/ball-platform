@@ -14,12 +14,11 @@ import logging
 import json
 import os
 
-# Look into wrong format with cv2
 
 class Camera():
     """ Class for handling camera """
     def __init__(self, pi_camera = True, show_cv2_windows = False):
-        # Path to current directory. Important when running as systemd service
+        # Path to current directory
         self.path = os.path.dirname(os.path.abspath(__file__)) + "/"
         # Open config file
         with open(self.path + "config.json", "r") as f:
@@ -28,12 +27,12 @@ class Camera():
         self.use_pi_camera = pi_camera
         # Show image processing in cv2 windows
         self.show_cv2_windows = show_cv2_windows
-        # Video varianles
+        # Video varianbes
         self.frame_width = config_data["frame_width"]
         self.frame_height = config_data["frame_height"]
         self.framrate = config_data["framerate"]
         self.camera_rotation = eval(config_data["camera_rotation"])
-        # Turn on LED-ring for an even lighting
+        # Turn on LED-ring for an even lighting of the disk
         self.leds = neopixel.NeoPixel(board.D10, 24, brightness=1, auto_write=False)
         self.leds.fill((255,255,255))
         self.leds.show()
@@ -47,7 +46,7 @@ class Camera():
             self.videostream.resolution = (self.frame_width, self.frame_height)
             self.videostream.framerate = self.framrate
             self.rawCapture = PiRGBArray(self.videostream, size=(self.frame_width, self.frame_height))
-            # allow the camera to warmup    
+            # allow the camera to warm up    
             time.sleep(0.1)
         else:
             logging.info("Using cv2.VideoCapture module for video")
@@ -57,13 +56,15 @@ class Camera():
             self.videostream.set(4, self.frame_height)
             # Set framerate?
             
-            self.static = None
+
 
             # Get the first frame
             ret, frame = self.videostream.read()
             # Print the resolution of the image
             logging.info(f"The resolution of the images: {frame.shape[0]}, {frame.shape[1]}") 
             
+            # NOTE: do we need this?
+            self.static = None
             # Frame for simulation
             self.static = cv2.rotate(frame, self.camera_rotation)
 
@@ -86,8 +87,8 @@ class Camera():
         else:
             logging.info("Not displaying image processing in cv2 windows")
 
-        # Dict for storing position-data of plate and ball
-        self.objects = {"plate":{"x":None, "y":None, "r":None}, "ball":{"x":None, "y":None, "r":None}}
+        # Dict for storing position-data of disk and ball
+        self.objects = {"disk":{"x":None, "y":None, "r":None}, "ball":{"x":None, "y":None, "r":None}}
  
 
     def turn_off_leds(self):
@@ -133,8 +134,8 @@ class Camera():
         contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
         return frame, contours
 
-    def locate_plate(self, frame):
-        """Finds plate in picture""" 
+    def locate_disk(self, frame):
+        """ Finds disk in picture """ 
         frame, contours = self.find_contours(frame)
         for (i, contour) in enumerate(contours):
             
@@ -156,11 +157,10 @@ class Camera():
             # Calculate the area of the circle
             circle_area = math.pi*radius*radius
 
-            # The first large round object in the picture must be the plate
+            # The first large round object in the list of contours 
+            # (picture) must be the disk
             if circle_area/picture_area > 0.3:
-                # Assume that the first circle in the contours 
-                # list is the plate (it will be the largest round object).
-                self.objects["plate"] = {"x":int(center[0]), "y":int(center[1]), "r":radius}
+                self.objects["disk"] = {"x":int(center[0]), "y":int(center[1]), "r":radius}
                 return
 
     def find_ball(self,frame):
@@ -168,7 +168,8 @@ class Camera():
         frame, contours = self.find_contours(frame)
 
         # Loop over each contour
-        # Assume that the first circle in the contours list that is located on the plate is the ball.
+        # Assume that the first circle in the contours list that 
+        # is located on the disk is the ball.
         for (i, contour) in enumerate(contours):
             
             approx = cv2.approxPolyDP(contour, 0.01 * cv2.arcLength(contour, True), True)
@@ -202,16 +203,16 @@ class Camera():
 
             # Maybe the ball
             found_ball = False
-            # It is not the plate
+            # It is not the disk
             if circle_area/picture_area < 0.3:
 
-                # Check that the x-coordinate of the circle is larger than (further to the right) the left most point of the circle's perimeter, 
-                # and that the x-coordinate is smaller (further to the left) than the right most point of the circle's perimeter
-                a = center[0] > self.objects["plate"]["x"] - self.objects["plate"]["r"] and center[0] < self.objects["plate"]["x"] + self.objects["plate"]["r"]
-                # Check that the y-coordinate of the circle is larger than (further down) the highest of the circle's perimeter, 
-                # and that the y-coordinate is smaller (further up) than the right lowest point of the circle's perimeter
-                b = center[1] > self.objects["plate"]["y"] - self.objects["plate"]["r"] and center[1] < self.objects["plate"]["y"] + self.objects["plate"]["r"]
-                # If all of the conditions are met, the circle is on the plate.
+                # Check that the x-coordinate of the circle is larger than (further to the right) the left most point of the disk's perimeter, 
+                # and that the x-coordinate is smaller (further to the left) than the right most point of the disk's perimeter
+                a = center[0] > self.objects["disk"]["x"] - self.objects["disk"]["r"] and center[0] < self.objects["disk"]["x"] + self.objects["disk"]["r"]
+                # Check that the y-coordinate of the circle is larger than (further down) the highest of the disk's perimeter, 
+                # and that the y-coordinate is smaller (further up) than the right lowest point of the disk's perimeter
+                b = center[1] > self.objects["disk"]["y"] - self.objects["disk"]["r"] and center[1] < self.objects["disk"]["y"] + self.objects["disk"]["r"]
+                # If all of the conditions are met, the circle is on the disk.
                 # Assume that this circle is the ball
                 if not (a and b):
                     # We have not found the ball, try the next circle
@@ -222,8 +223,8 @@ class Camera():
                 if self.show_cv2_windows:
                     # Higlight the ball
                     cv2.circle(frame, (self.objects["ball"]["x"], self.objects["ball"]["y"]), int(radius), (0, 0, 255), 10)
-                    # Draw a line from the center of the ball to the center of the plate
-                    cv2.line(frame, (self.objects["ball"]["x"], self.objects["ball"]["y"]), (self.objects["plate"]["x"], self.objects["plate"]["y"]), (255, 255, 0), 3)
+                    # Draw a line from the center of the ball to the center of the disk
+                    cv2.line(frame, (self.objects["ball"]["x"], self.objects["ball"]["y"]), (self.objects["disk"]["x"], self.objects["disk"]["y"]), (255, 255, 0), 3)
                     
                 found_ball = True
                 break
@@ -233,34 +234,35 @@ class Camera():
                 self.objects["ball"] = {"x": None, "y":None}
             
         if self.show_cv2_windows:
-            # Draw plate onto image
-            cv2.circle(frame, (int(self.objects["plate"]["x"]), int(self.objects["plate"]["y"])), radius=3, color=(0,255,0), thickness=3)
+            # Draw disk onto image
+            cv2.circle(frame, (int(self.objects["disk"]["x"]), int(self.objects["disk"]["y"])), radius=3, color=(0,255,0), thickness=3)
             # Draw the perimeter of the circle onto the image
-            cv2.circle(frame, (int(self.objects["plate"]["x"]), int(self.objects["plate"]["y"])), int(self.objects["plate"]["r"]), (255, 0, 0), 2)
+            cv2.circle(frame, (int(self.objects["disk"]["x"]), int(self.objects["disk"]["y"])), int(self.objects["disk"]["r"]), (255, 0, 0), 2)
             # Show image with all contours and shapes on it
             cv2.imshow("Final", frame)
 
     def get_positions(self):
-        """ Returns last known position of ball and plate"""
+        """ Returns last known position of ball and disk"""
         return self.objects
 
+    # NOTE: is this function in use?
     def simulate(self):
         draw = self.static
-        self.objects = {"plate":{"x":289, "y":257, "r":210}, "ball":{"x":200, "y":257, "r":20}}
+        self.objects = {"disk":{"x":289, "y":257, "r":210}, "ball":{"x":200, "y":257, "r":20}}
         
-        # Draw plate
-        cv2.circle(draw, (int(self.objects["plate"]["x"]), int(self.objects["plate"]["y"])), radius=3, color=(0,255,0), thickness=3)
+        # Draw disk
+        cv2.circle(draw, (int(self.objects["disk"]["x"]), int(self.objects["disk"]["y"])), radius=3, color=(0,255,0), thickness=3)
         # Draw the perimeter of the circle onto the image
-        cv2.circle(draw, (int(self.objects["plate"]["x"]), int(self.objects["plate"]["y"])), int(self.objects["plate"]["r"]), (255, 0, 0), 2)
+        cv2.circle(draw, (int(self.objects["disk"]["x"]), int(self.objects["disk"]["y"])), int(self.objects["disk"]["r"]), (255, 0, 0), 2)
 
         # Higlight the ball
         cv2.circle(draw, (self.objects["ball"]["x"], self.objects["ball"]["y"]), self.objects["ball"]["r"], (0, 0, 255), 10)
-        # Draw a line from the center of the ball to the center of the plate
-        cv2.line(draw, (self.objects["ball"]["x"], self.objects["ball"]["y"]), (self.objects["plate"]["x"], self.objects["plate"]["y"]), (255, 255, 0), 3)
+        # Draw a line from the center of the ball to the center of the disk
+        cv2.line(draw, (self.objects["ball"]["x"], self.objects["ball"]["y"]), (self.objects["disk"]["x"], self.objects["disk"]["y"]), (255, 255, 0), 3)
         cv2.imshow("Final", draw)
         key = cv2.waitKey(1) & 0xFF 
 
-    def pi_camera_next_frame(self,do_other_stuff):
+    def pi_camera_next_frame(self, find_and_correct_ball):
         """ Runs forever as loop. Gets the next frame, proccesses it
 		and checks if the user wants to quit. Then does the
         funtion provided."""
@@ -269,16 +271,16 @@ class Camera():
             # grab the raw NumPy array representing the image, then initialize the timestamp
             # and occupied/unoccupied text
             image = frame.array
-            # Use the first 3 frame to locate the plate
+            # Use the first 3 frame to locate the disk
             # in the image
             if self.num_frames <= 2:
-                self.locate_plate(image)
+                self.locate_disk(image)
                 self.num_frames += 1
 
             elif self.num_frames > 2:
                 self.find_ball(image)
-                if do_other_stuff:
-                    do_other_stuff()
+                if find_and_correct_ball:
+                    find_and_correct_ball()
             
             key = cv2.waitKey(1) & 0xFF
             # clear the stream in preparation for the next frame
@@ -294,10 +296,10 @@ class Camera():
 		save the frame """
         # Get the next frame
         ret, frame = self.videostream.read()
-        # Locates  and highlighrs ball and plate in image
+        # Locates  and highlighrs ball and disk in image
 
         if self.num_frames <= 2:
-            self.locate_plate(frame)
+            self.locate_disk(frame)
             self.num_frames += 1
 
         elif self.num_frames > 2:
