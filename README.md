@@ -21,6 +21,7 @@ As the function used to calculate the forward kinematics is monotonic, I did not
 ![function](https://github.com/Martin-Ansteensen/ball-platform/assets/50178947/0bd60cb9-3e6c-4774-ab28-4dd2aff8223a)
 
 ## Robot in action
-[![Watch the robot in action](https://img.youtube.com/vi/sYU_3XsPKic/maxresdefault.jpg)]([https://www.youtube.com/watch?v=nO7r-7b6NJc](https://www.youtube.com/watch?v=sYU_3XsPKic)https://www.youtube.com/watch?v=sYU_3XsPKic)
-[![Watch the robot in action](https://img.youtube.com/vi/nO7r-7b6NJc/maxresdefault.jpg)](https://www.youtube.com/watch?v=nO7r-7b6NJc)
+[![Watch the video](https://img.youtube.com/vi/sYU_3XsPKic/maxresdefault.jpg)](https://www.youtube.com/watch?v=sYU_3XsPKic)
+
+[![Watch the video](https://img.youtube.com/vi/nO7r-7b6NJc/maxresdefault.jpg)](https://www.youtube.com/watch?v=nO7r-7b6NJc)
 
