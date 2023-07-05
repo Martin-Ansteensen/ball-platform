@@ -1,5 +1,6 @@
 # ball-platform
 A robot project made to balance a ball on a platform. The platform is controlled by two servo motors, and the ball's position is detected using a camera. A Raspberry Pi is the brain of the project, and calculates the incline of the plane needed to get the ball to the desired position. 
+![cad-drawing](https://github.com/Martin-Ansteensen/ball-platform/assets/50178947/58887da9-8933-4164-b917-b573d7f5464f)
 
 ## Forward kinematics
 This is the exact dimensions of the robot:
@@ -22,8 +23,8 @@ As the function used to calculate the forward kinematics is monotonic (at least 
 ![function](https://github.com/Martin-Ansteensen/ball-platform/assets/50178947/0bd60cb9-3e6c-4774-ab28-4dd2aff8223a)
 
 ## Robot in action
-[![Watch the video](https://img.youtube.com/vi/sYU_3XsPKic/0.jpg)](https://www.youtube.com/watch?v=sYU_3XsPKic "TITLE")
+[![Watch the video](https://img.youtube.com/vi/sYU_3XsPKic/0.jpg)](https://www.youtube.com/watch?v=sYU_3XsPKic)
 
-[![Watch the video](https://img.youtube.com/vi/nO7r-7b6NJc/0.jpg)](https://www.youtube.com/watch?v=nO7r-7b6NJc "TITLE")
+[![Watch the video](https://img.youtube.com/vi/nO7r-7b6NJc/0.jpg)](https://www.youtube.com/watch?v=nO7r-7b6NJc)
 
 Martin Ansteensen 2022
