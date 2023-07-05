@@ -18,6 +18,7 @@ where u is the angle of the servo located at J1, and x(J1) and y(J1) is the x- a
 
 ## Inverse kinematics
 As the function used to calculate the forward kinematics is monotonic (at least with the dimensions of my robot), I did not bother calculting the inverse kinematics. Instead, I perform a binary search on the forward kinematics function (shown below, where the inputs will range from -1.05 to 0.82)
+
 ![function](https://github.com/Martin-Ansteensen/ball-platform/assets/50178947/0bd60cb9-3e6c-4774-ab28-4dd2aff8223a)
 
 ## Robot in action
@@ -25,3 +26,4 @@ As the function used to calculate the forward kinematics is monotonic (at least 
 
 [![Watch the video](https://img.youtube.com/vi/nO7r-7b6NJc/0.jpg)](https://www.youtube.com/watch?v=nO7r-7b6NJc "TITLE")
 
+Martin Ansteensen 2022
