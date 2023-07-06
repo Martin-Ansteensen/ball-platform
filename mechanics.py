@@ -8,6 +8,7 @@ import logging
 import json
 import os
 
+
 # Path to current directory
 path = os.path.dirname(os.path.abspath(__file__)) + "/"
 # Open config file
@@ -135,10 +136,15 @@ class ArmMechanics:
         # End coordinate for end of servo arm (J2)
         J2_ROT_P = self.J1_ROT_P + J2_displacement
         # Calculate the slope of the line
-        angle_line_constant_part = -0.5*m.pi*np.sign(J2_ROT_P[1])*(np.sign(self.D1) + np.sign(J2_ROT_P[0])) + m.atan(J2_ROT_P[1]/J2_ROT_P[0])
-        sqrt_part = (self.D1**2 - self.L2**2 + J2_ROT_P[0]**2 + J2_ROT_P[1]**2)*sqrt(J2_ROT_P[0]**2 + J2_ROT_P[1]**2)
-        angle_line_variable_part = -m.asin(2*sqrt_part.real/(2*abs(self.D1)*(J2_ROT_P[0]**2 + J2_ROT_P[1]**2))) 
         
+        # angle_line_constant_part = -0.5*m.pi*np.sign(J2_ROT_P[1])*(np.sign(self.D1) + np.sign(J2_ROT_P[0])) + m.atan(J2_ROT_P[1]/J2_ROT_P[0])
+        # sqrt_part = (self.D1**2 - self.L2**2 + J2_ROT_P[0]**2 + J2_ROT_P[1]**2)*sqrt(J2_ROT_P[0]**2 + J2_ROT_P[1]**2)/(2*abs(self.D1)*(J2_ROT_P[0]**2 + J2_ROT_P[1]**2))
+        # angle_line_variable_part = -m.asin(sqrt_part.real) + 3.58
+
+        angle_line_constant_part = -0.5*m.pi*np.sign(J2_ROT_P[1])*(np.sign(self.D1) + np.sign(J2_ROT_P[0])) + m.atan(J2_ROT_P[1]/J2_ROT_P[0])
+        sqrt_part = sqrt(J2_ROT_P[0]**2 + J2_ROT_P[1]**2)*(self.L2**2 - self.D1**2 - J2_ROT_P[0]**2 - J2_ROT_P[1]**2)
+        angle_line_variable_part = m.acos(sqrt_part.real/(abs(self.D1)*2*(J2_ROT_P[0]**2 + J2_ROT_P[1]**2))) 
+
         # Calculate the two possible angles
         # This one is the second solution, does not work for our application
         # v1 = angle_line_constant_part + angle_line_variable_part 
@@ -451,7 +457,7 @@ class PID_Controller():
         return correction
     
     def reset(self):
-        print("Lost ball, PID resetting")
+        logging.info("Lost ball, PID resetting")
         self.p = 0
         self.i = 0
         self.d = 0
@@ -514,7 +520,7 @@ class Mix_PID_Controller(PID_Controller):
         return correction
 
     def reset(self):
-        print("Lost ball, PID resetting")
+        logging.info("Lost ball, PID resetting")
         self.p = 0
         self.i = 0
         self.d = 0

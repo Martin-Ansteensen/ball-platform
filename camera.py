@@ -161,6 +161,7 @@ class Camera():
             # (picture) must be the disk
             if circle_area/picture_area > 0.3:
                 self.objects["disk"] = {"x":int(center[0]), "y":int(center[1]), "r":radius}
+                logging.critical("Found disk")
                 return
 
     def find_ball(self,frame):
@@ -271,13 +272,11 @@ class Camera():
             # grab the raw NumPy array representing the image, then initialize the timestamp
             # and occupied/unoccupied text
             image = frame.array
-            # Use the first 3 frame to locate the disk
-            # in the image
-            if self.num_frames <= 2:
+            # Find the disk
+            if not self.objects["disk"]["x"]:
+                logging.warning("Did not find disk")
                 self.locate_disk(image)
-                self.num_frames += 1
-
-            elif self.num_frames > 2:
+            else:
                 self.find_ball(image)
                 if find_and_correct_ball:
                     find_and_correct_ball()
@@ -298,11 +297,11 @@ class Camera():
         ret, frame = self.videostream.read()
         # Locates  and highlighrs ball and disk in image
 
-        if self.num_frames <= 2:
+        if not self.objects["disk"]["x"]:
+            logging.warning("Did not find disk")
             self.locate_disk(frame)
-            self.num_frames += 1
 
-        elif self.num_frames > 2:
+        else:
             self.find_ball(frame)
         
 		# Get the status of the keyboard keys

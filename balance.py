@@ -11,7 +11,7 @@ def find_and_correct_ball():
     # Get dict with position data from camera
     pos_data = cam.get_positions()
     # Set target_positon for ball
-    plane_instance.set_ball_target_point(pos_data["plate"]) 
+    plane_instance.set_ball_target_point(pos_data["disk"]) 
     # Correct the position of the ball
     plane_instance.correct_ball(pos_data)
 
