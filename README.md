@@ -18,7 +18,7 @@ Given a fixed position of J2, we want to find the angle of the plane (v). We kno
 ![calculation](https://github.com/Martin-Ansteensen/ball-platform/assets/50178947/4d6f0c7e-48a7-43a8-8252-d65dc4c1ec01)
 Where J2 is given by 
 ```math
- (x, y) = (L1\cdot cos(u) + x(J1), L\cdot sin(u) + y(J1))
+ (x, y) = (L1\cdot cos(u) + x(J1), L1\cdot sin(u) + y(J1))
 ```
 where u is the angle of the servo located at J1, and x(J1) and y(J1) are the x- and y-position of J1 relative to C.
 
