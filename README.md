@@ -1,8 +1,9 @@
 # ball-platform
-A robot project made to balance a ball on a platform. The platform is controlled by two servo motors, and the ball's position is detected using a camera. A Raspberry Pi is the brain of the project, and calculates the incline of the plane needed to get the ball to the desired position. 
+A robot made to balance a ball on a platform. The platform is controlled by two servo motors, and the ball's position is detected using a camera. A Raspberry Pi is the brain of the project, and calculates the incline of the plane needed to get the ball to the desired position. 
 ![cad_model](images/cad_model.PNG)
 
 ## Robot in action
+Click the images below to watch the robot in action.
 [![Watch the video](https://img.youtube.com/vi/sYU_3XsPKic/0.jpg)](https://www.youtube.com/watch?v=sYU_3XsPKic)
 
 [![Watch the video](https://img.youtube.com/vi/nO7r-7b6NJc/0.jpg)](https://www.youtube.com/watch?v=nO7r-7b6NJc)
